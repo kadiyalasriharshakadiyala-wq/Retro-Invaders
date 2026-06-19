@@ -114,6 +114,7 @@
     <div>SCORE: <span id="score">00000</span></div>
     <div>HIGH: <span id="high-score">00000</span></div>
     <div>LIVES: <span id="lives">3</span></div>
+    <div>STARS: <span id="stars">0</span></div>
   </div>
   
   <div style="width: 800px; display: flex; justify-content: flex-end; margin-bottom: 4px;">
@@ -129,6 +130,7 @@
       <div style="margin: 12px 0; font-size: 14px; color: #0ff;">The 8-bit classic returns!</div>
       <div style="margin-bottom: 16px; font-size: 13px; color: #ff0;">HIGH SCORE: <span id="menu-high-score">00000</span></div>
       <button onclick="startGame()">PRESS SPACE OR CLICK TO START</button>
+      <button onclick="startEndlessMode()" style="margin-top: 8px; background: #f80; color: #000;">ENDLESS MODE (Roguelike)</button>
       <div style="margin-top: 30px; font-size: 11px; color: #666;">
         ← → MOVE &nbsp;&nbsp;&nbsp; SPACE SHOOT
       </div>
@@ -144,7 +146,7 @@
   </div>
   
   <div class="info">
-    <span>ARROW KEYS / A D</span> to move &nbsp;&nbsp; • &nbsp;&nbsp; <span>SPACE</span> to shoot &nbsp;&nbsp; • &nbsp;&nbsp; <span>R</span> to restart &nbsp;&nbsp; • &nbsp;&nbsp; <span>M</span> music
+    <span>ARROW KEYS / A D</span> to move &nbsp;&nbsp; • &nbsp;&nbsp; <span>SPACE</span> to shoot &nbsp;&nbsp; • &nbsp;&nbsp; <span>P</span> pause &nbsp;&nbsp; • &nbsp;&nbsp; <span>R</span> restart &nbsp;&nbsp; • &nbsp;&nbsp; <span>M</span> music
   </div>
 
   <script>
@@ -174,7 +176,11 @@
     let enemies = [];
     let particles = [];
     let stars = [];
+    let parallaxOffset = 0;
     let enemyBullets = [];
+    let powerups = [];
+    let barriers = []; // destructible bases
+    let boss = null; // for boss waves
     
     // Input
     const keys = {};
@@ -191,6 +197,17 @@
     
     // Wave tracking
     let wave = 1;
+
+    // Mood-based behavior tweak
+    function applyMoodBehavior(enemy) {
+      if (enemy.emotion === 'happy') {
+        // Happy enemies shoot more aggressively (handled in timing)
+        return 1.2;
+      } else if (enemy.emotion === 'sad') {
+        return 0.7; // slower
+      }
+      return 1;
+    }
     
     // Emotions for expressive characters
     let enemyIdCounter = 0;
@@ -202,6 +219,76 @@
     let musicTimer = null;
     let musicBeat = 0;
     const MUSIC_BASE_TEMPO = 155; // ms per step, nostalgic 8-bit feel
+
+    // Screen shake
+    let screenShake = 0;
+    function triggerShake(amount) {
+      screenShake = Math.max(screenShake, amount);
+    }
+
+    // Visual settings
+    let crtEnabled = true;
+    let paused = false;
+
+    let activePowerups = {}; // e.g. rapid: frames left
+
+    // Combo system
+    let combo = 0;
+    let comboTimer = 0;
+    let multiplier = 1;
+    let biggestCombo = 1;
+
+    // Stats for aftermath
+    let stats = {
+      destroyed: 0,
+      happyMade: 0,
+      sadMade: 0,
+      scaredMade: 0
+    };
+
+    // Rivalry / grudge
+    let grudgeEnemyType = -1;
+    let grudgeHits = 0;
+
+    // Meta progression
+    let earnedStars = parseInt(localStorage.getItem('retroInvadersStars')) || 0;
+
+    function activatePowerup(type) {
+      if (type === 'rapid') {
+        activePowerups.rapid = 400;
+        playerEmotion = 'smug';
+        playerEmotionTime = 40;
+      } else if (type === 'spread') {
+        activePowerups.spread = 300;
+        playerEmotion = 'smug';
+        playerEmotionTime = 40;
+      } else if (type === 'shield') {
+        activePowerups.shield = 200;
+        playerEmotion = 'proud';
+        playerEmotionTime = 30;
+      } else if (type === 'smartbomb') {
+        // Clear screen!
+        triggerShake(15);
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          createParticles(enemies[i].x + enemies[i].width/2, enemies[i].y + enemies[i].height/2, 12, '#ff0');
+          score += 50;
+          stats.destroyed++;
+        }
+        enemies = [];
+        powerups = []; // clear others too
+        playSound('wave');
+        playerEmotion = 'proud';
+        playerEmotionTime = 50;
+      } else if (type === 'piercing') {
+        activePowerups.piercing = 250;
+        playerEmotion = 'smug';
+        playerEmotionTime = 30;
+      } else if (type === 'slowmo') {
+        activePowerups.slowmo = 180;
+        playerEmotion = 'proud';
+        playerEmotionTime = 30;
+      }
+    }
     
     function initStars() {
       stars = [];
@@ -236,6 +323,30 @@
       playerEmotion = 'neutral';
       playerEmotionTime = 0;
       enemyIdCounter = 0;
+
+      // Reset powerups and stats
+      activePowerups = {};
+      powerups = [];
+      combo = 0;
+      multiplier = 1;
+      comboTimer = 0;
+      biggestCombo = 1;
+      stats = { destroyed: 0, happyMade: 0, sadMade: 0, scaredMade: 0 };
+      grudgeEnemyType = -1;
+      grudgeHits = 0;
+
+      // Init destructible barriers
+      barriers = [];
+      for (let i = 0; i < 4; i++) {
+        barriers.push({
+          x: 120 + i * 160,
+          y: HEIGHT - 70,
+          width: 50,
+          height: 20,
+          health: 4
+        });
+      }
+      boss = null;
       
       updateHUD();
       document.getElementById('menu-high-score').textContent = String(highScore).padStart(5, '0');
@@ -259,7 +370,7 @@
             y: startY + r * spacingY,
             width: 32,
             height: 24,
-            type: (r % 3),
+            type: (r + Math.floor(wave / 2)) % 5, // more variety: 0-4 now includes diver/bomber vibes
             id: ++enemyIdCounter,
             emotion: 'neutral',
             emotionTime: 0
@@ -272,9 +383,11 @@
       document.getElementById('score').textContent = String(score).padStart(5, '0');
       document.getElementById('lives').textContent = lives;
       document.getElementById('high-score').textContent = String(highScore).padStart(5, '0');
+      document.getElementById('stars').textContent = earnedStars;
     }
     
     function createParticles(x, y, count, color = '#ff0') {
+      triggerShake(3);
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 3.5 + 1.5;
@@ -291,7 +404,7 @@
     }
     
     function update() {
-      if (gameState !== 'playing') return;
+      if (gameState !== 'playing' || paused) return;
       
       // Player movement
       let moving = false;
@@ -310,7 +423,8 @@
       
       // Shooting
       const now = Date.now();
-      if ((keys[' '] || keys['Space']) && now - lastShotTime > SHOOT_COOLDOWN) {
+      const shootCooldown = activePowerups.rapid > 0 ? 80 : SHOOT_COOLDOWN;
+      if ((keys[' '] || keys['Space']) && now - lastShotTime > shootCooldown) {
         shoot();
         lastShotTime = now;
       }
@@ -319,6 +433,25 @@
       for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
         b.y -= b.speed;
+        
+        // Check barriers
+        for (let bi = barriers.length - 1; bi >= 0; bi--) {
+          const bar = barriers[bi];
+          if (bar.health > 0 && b.x > bar.x && b.x < bar.x + bar.width && b.y > bar.y && b.y < bar.y + bar.height) {
+            bar.health--;
+            if (!b.piercing) bullets.splice(i, 1);
+            createParticles(b.x, b.y, 4, '#888');
+            break;
+          }
+        }
+        
+        // Boss
+        if (boss && b.x > boss.x && b.x < boss.x + boss.width && b.y > boss.y && b.y < boss.y + boss.height) {
+          boss.health -= 1;
+          if (!b.piercing) bullets.splice(i, 1);
+          createParticles(b.x, b.y, 5, '#f00');
+          triggerShake(3);
+        }
         
         if (b.y < 0) {
           bullets.splice(i, 1);
@@ -329,6 +462,20 @@
       for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const eb = enemyBullets[i];
         eb.y += eb.speed;
+        
+        // Check barriers
+        let hitBar = false;
+        for (let bi = barriers.length - 1; bi >= 0; bi--) {
+          const bar = barriers[bi];
+          if (bar.health > 0 && eb.x > bar.x && eb.x < bar.x + bar.width && eb.y > bar.y && eb.y < bar.y + bar.height) {
+            bar.health--;
+            enemyBullets.splice(i, 1);
+            createParticles(eb.x, eb.y, 4, '#888');
+            hitBar = true;
+            break;
+          }
+        }
+        if (hitBar) continue;
         
         if (eb.y > HEIGHT) {
           // Bullet missed - make the shooter sad
@@ -347,7 +494,8 @@
         let hitEdge = false;
         
         for (const enemy of enemies) {
-          enemy.x += enemyDirection * enemySpeed;
+          let speedMod = activePowerups.slowmo > 0 ? 0.4 : 1;
+          enemy.x += enemyDirection * enemySpeed * speedMod;
           
           // Check edges
           if (enemy.x < 25 || enemy.x + enemy.width > WIDTH - 25) {
@@ -401,6 +549,59 @@
           e.emotion = 'neutral';
         }
       }
+
+      // Decay screen shake
+      if (screenShake > 0) {
+        screenShake *= 0.85;
+        if (screenShake < 0.5) screenShake = 0;
+      }
+
+      // Update power-ups
+      for (let i = powerups.length - 1; i >= 0; i--) {
+        const p = powerups[i];
+        p.y += 1.5;
+        p.life--;
+        if (p.y > HEIGHT || p.life <= 0) {
+          powerups.splice(i, 1);
+        }
+        // Pickup
+        if (Math.abs(p.x - player.x) < 25 && Math.abs(p.y - player.y) < 25) {
+          activatePowerup(p.type);
+          powerups.splice(i, 1);
+          playSound('wave'); // juicy sound placeholder
+          triggerShake(2);
+        }
+      }
+
+      // Parallax movement
+      parallaxOffset = (parallaxOffset + 0.2) % 100;
+
+      // Decay power-ups
+      for (let key in activePowerups) {
+        if (activePowerups[key] > 0) activePowerups[key]--;
+      }
+
+      // Slow-mo effect
+      if (activePowerups.slowmo > 0) {
+        // Will be applied in enemy movement
+      }
+
+      // Combo decay
+      if (comboTimer > 0) {
+        comboTimer--;
+        // High combo makes enemies scared
+        if (multiplier >= 4 && enemies.length > 0 && Math.random() < 0.05) {
+          const idx = Math.floor(Math.random() * enemies.length);
+          makeEnemyScared(enemies[idx].id);
+        }
+      } else if (combo > 0) {
+        if (multiplier >= 4) {
+          playerEmotion = 'proud';
+          playerEmotionTime = 25;
+        }
+        combo = 0;
+        multiplier = 1;
+      }
       
       // Collision: bullets vs enemies
       for (let bi = bullets.length - 1; bi >= 0; bi--) {
@@ -418,24 +619,60 @@
             bullet.y + bullet.height > enemy.y
           ) {
             // Hit!
-            const points = 100 + (enemy.type * 30);
+            const points = Math.floor((100 + (enemy.type * 30)) * multiplier);
             score += points;
+            combo++;
+            comboTimer = 120; // frames to chain
+            multiplier = Math.min(8, 1 + Math.floor(combo / 4));
+            biggestCombo = Math.max(biggestCombo, multiplier);
+            stats.destroyed++;
             updateHUD();
             
             // Create explosion
             const color = enemy.type === 0 ? '#f44' : (enemy.type === 1 ? '#fa4' : '#4ff');
             createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 9, color);
             
+            // Special heart/confetti if happy enemy killed (emotional reward)
+            if (enemy.emotion === 'happy') {
+              for (let i = 0; i < 5; i++) {
+                particles.push({
+                  x: enemy.x + enemy.width / 2,
+                  y: enemy.y + enemy.height / 2,
+                  vx: (Math.random() - 0.5) * 4,
+                  vy: (Math.random() - 1.5) * 3,
+                  life: 30,
+                  color: '#ff69b4',
+                  size: 3,
+                  type: 'heart'
+                });
+              }
+            }
+            
             // Remove
             enemies.splice(ei, 1);
-            bullets.splice(bi, 1);
+            if (!bullet.piercing) {
+              bullets.splice(bi, 1);
+            }
             hit = true;
             
             // Play hit sound
             playSound('hit');
+            triggerShake(4);
             
             // Hero is happy when he kills an enemy!
             makePlayerHappy();
+            
+            // Chance to drop power-up (juicy!)
+            if (Math.random() < 0.18) {
+              const types = ['rapid', 'spread', 'shield', 'smartbomb', 'piercing', 'slowmo'];
+              const type = types[Math.floor(Math.random() * types.length)];
+              powerups.push({
+                x: enemy.x + enemy.width / 2,
+                y: enemy.y,
+                type: type,
+                life: 300
+              });
+            }
             
             break;
           }
@@ -483,14 +720,20 @@
             makeEnemyHappy(eb.shooterId);
           }
           enemyBullets.splice(i, 1);
-          createParticles(player.x, player.y - 5, 11, '#f44');
-          loseLife();
+          triggerShake(6);
+          if (activePowerups.shield > 0) {
+            activePowerups.shield = 0;
+            createParticles(player.x, player.y, 8, '#0ff');
+          } else {
+            createParticles(player.x, player.y - 5, 11, '#f44');
+            loseLife();
+          }
           break;
         }
       }
       
       // Win condition: all enemies dead → next wave
-      if (enemies.length === 0) {
+      if (enemies.length === 0 && !boss) {
         wave++;
         
         // Stronger difficulty ramp each wave
@@ -503,28 +746,77 @@
         lastEnemyShot = Date.now() + 900; // brief breathing room after wave clear
         lastEnemyMove = Date.now();
         
-        createWaveEnemies();
-        
-        // Bonus for clearing wave
-        score += 250 * wave;
+        if (wave % 5 === 0) {
+          // Boss wave!
+          boss = {
+            x: WIDTH/2 - 40,
+            y: 80,
+            width: 80,
+            height: 50,
+            health: 15 + wave * 2,
+            phase: 0,
+            emotion: 'celebrate'
+          };
+          score += 500;
+          playSound('wave');
+        } else {
+          createWaveEnemies();
+          // Bonus for clearing wave
+          score += 250 * wave;
+          playSound('wave');
+        }
+
+        if (endlessMode) {
+          // Roguelike: grant a random power-up after each wave
+          const types = ['rapid', 'spread', 'shield', 'piercing', 'slowmo'];
+          const type = types[Math.floor(Math.random() * types.length)];
+          activatePowerup(type);
+          // Chance for smartbomb
+          if (Math.random() < 0.3) activatePowerup('smartbomb');
+        }
         updateHUD();
-        playSound('wave');
       }
       
       // Check game over
       if (lives <= 0) {
         endGame();
       }
+
+      // Boss logic
+      if (boss) {
+        boss.x += Math.sin(Date.now()/800) * 1.5;
+        if (Math.random() < 0.02) {
+          // Boss shoots
+          enemyBullets.push({x: boss.x + boss.width/2, y: boss.y + boss.height, width:6, height:14, speed: 3.5 + wave*0.1 });
+        }
+        if (boss.health <= 0) {
+          createParticles(boss.x + boss.width/2, boss.y + boss.height/2, 25, '#ff0');
+          triggerShake(20);
+          score += 1000;
+          boss = null;
+          createWaveEnemies();
+        }
+      }
     }
     
     function shoot() {
-      bullets.push({
+      const isRapid = activePowerups.rapid > 0;
+      const cooldown = isRapid ? 80 : SHOOT_COOLDOWN;
+      
+      const bullet = {
         x: player.x,
         y: player.y - player.height / 2 - 2,
         width: 4,
         height: 12,
-        speed: 9
-      });
+        speed: 9,
+        piercing: activePowerups.piercing > 0
+      };
+      bullets.push(bullet);
+      
+      if (activePowerups.spread > 0) {
+        bullets.push({ x: player.x - 8, y: player.y - player.height / 2 - 2, width: 3, height: 10, speed: 8, piercing: activePowerups.piercing > 0 });
+        bullets.push({ x: player.x + 8, y: player.y - player.height / 2 - 2, width: 3, height: 10, speed: 8, piercing: activePowerups.piercing > 0 });
+      }
       
       playSound('shoot');
     }
@@ -564,6 +856,7 @@
       if (enemy) {
         enemy.emotion = 'happy';
         enemy.emotionTime = 50;
+        stats.happyMade++;
       }
     }
     
@@ -572,6 +865,16 @@
       if (enemy) {
         enemy.emotion = 'sad';
         enemy.emotionTime = 40;
+        stats.sadMade++;
+      }
+    }
+    
+    function makeEnemyScared(id) {
+      const enemy = enemies.find(e => e.id === id);
+      if (enemy && enemy.emotion === 'neutral') {
+        enemy.emotion = 'sad'; // reuse sad for scared look, or could add 'scared'
+        enemy.emotionTime = 60;
+        stats.scaredMade++;
       }
     }
     
@@ -579,6 +882,13 @@
       lives--;
       updateHUD();
       playSound('hurt');
+      triggerShake(10);
+
+      // Rivalry grudge
+      grudgeHits++;
+      if (grudgeHits >= 3 && grudgeEnemyType === -1) {
+        grudgeEnemyType = Math.floor(Math.random() * 5);
+      }
       
       // Small screen shake via particles
       createParticles(player.x, player.y, 7, '#f88');
@@ -603,9 +913,39 @@
         highScore = score;
         localStorage.setItem('shooterHighScore', highScore);
       }
+
+      // Award stars
+      let starsThisRun = Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed;
+      earnedStars += starsThisRun;
+      localStorage.setItem('retroInvadersStars', earnedStars);
       
       document.getElementById('final-score').textContent = String(score).padStart(5, '0');
       document.getElementById('final-high-score').textContent = String(highScore).padStart(5, '0');
+
+      // Aftermath stats screen
+      const statsDiv = document.getElementById('game-over-stats') || document.createElement('div');
+      statsDiv.id = 'game-over-stats';
+      statsDiv.style.marginTop = '15px';
+      statsDiv.style.fontSize = '12px';
+      statsDiv.style.color = '#ccc';
+      statsDiv.style.lineHeight = '1.4';
+      let grudgeText = '';
+      if (grudgeHits >= 3) {
+        grudgeText = `<br>A ${['red','orange','cyan','bomber','diver'][grudgeEnemyType] || 'certain'} enemy held a grudge against you.`;
+      }
+      statsDiv.innerHTML = `
+        You destroyed <span style="color:#ff0">${stats.destroyed}</span> invaders today.<br>
+        Happy: <span style="color:#f44">${stats.happyMade}</span> | Sad: <span style="color:#88f">${stats.sadMade}</span> | Scared: <span style="color:#f8f">${stats.scaredMade}</span><br>
+        Biggest combo: <span style="color:#ff0">${biggestCombo}x</span> — they were terrified.<br>
+        <span style="color:#aaa; font-size:11px;">One of them looked genuinely betrayed...</span>
+        ${grudgeText}
+        <br><span style="color:#ff0">+${Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed} Stars earned! Total: ${earnedStars}</span>
+      `;
+      const goScreen = document.getElementById('game-over-screen');
+      if (!document.getElementById('game-over-stats')) {
+        goScreen.insertBefore(statsDiv, goScreen.querySelector('button'));
+      }
+
       document.getElementById('game-over-screen').classList.add('visible');
       document.getElementById('start-screen').classList.remove('visible');
       
@@ -625,9 +965,35 @@
       
       resetGame();
       gameState = 'playing';
+      endlessMode = false;
       
       document.getElementById('start-screen').classList.remove('visible');
       document.getElementById('game-over-screen').classList.remove('visible');
+      const oldStats = document.getElementById('game-over-stats');
+      if (oldStats) oldStats.remove();
+      
+      updateHUD();
+      playSound('start');
+      startMusic();
+    }
+
+    let endlessMode = false;
+
+    function startEndlessMode() {
+      if (gameState === 'playing') return;
+      
+      resetGame();
+      gameState = 'playing';
+      endlessMode = true;
+      wave = 1;
+      
+      document.getElementById('start-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
+      const oldStats = document.getElementById('game-over-stats');
+      if (oldStats) oldStats.remove();
+      
+      // Start with some powerups in endless
+      activePowerups.rapid = 200;
       
       updateHUD();
       playSound('start');
@@ -640,6 +1006,8 @@
       
       document.getElementById('start-screen').classList.remove('visible');
       document.getElementById('game-over-screen').classList.remove('visible');
+      const oldStats = document.getElementById('game-over-stats');
+      if (oldStats) oldStats.remove();
       
       updateHUD();
       startMusic();
@@ -862,18 +1230,40 @@
         toggleMusic();
         e.preventDefault();
       }
+      if (e.key.toLowerCase() === 'p' && gameState === 'playing') {
+        paused = !paused;
+        e.preventDefault();
+      }
     });
     
     function draw() {
       // Background
       ctx.fillStyle = '#05070a';
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      
-      // Stars
+
+      // Apply screen shake
+      ctx.save();
+      if (screenShake > 0) {
+        const shakeX = (Math.random() - 0.5) * screenShake;
+        const shakeY = (Math.random() - 0.5) * screenShake;
+        ctx.translate(shakeX, shakeY);
+      }
+
+      // Stars - parallax layers for depth
+      // Layer 1 (far, slow)
+      ctx.fillStyle = '#aaa';
+      for (let i = 0; i < stars.length * 0.6; i++) {
+        const s = stars[i % stars.length];
+        const x = (s.x + parallaxOffset * 0.3) % WIDTH;
+        ctx.globalAlpha = s.brightness * 0.6;
+        ctx.fillRect(x, s.y, s.size * 0.7, s.size * 0.7);
+      }
+      // Layer 2 (mid)
       ctx.fillStyle = '#fff';
       for (const star of stars) {
+        const x = (star.x + parallaxOffset * 0.8) % WIDTH;
         ctx.globalAlpha = star.brightness;
-        ctx.fillRect(star.x, star.y, star.size, star.size);
+        ctx.fillRect(x, star.y, star.size, star.size);
       }
       ctx.globalAlpha = 1;
       
@@ -907,26 +1297,45 @@
         // Happy squinty / ^ eyes
         ctx.fillRect(px - 5, faceY - 1, 3, 2);
         ctx.fillRect(px + 3, faceY - 1, 3, 2);
-        // Eyebrows raised for happy
         ctx.fillStyle = '#000';
         ctx.fillRect(px - 6, faceY - 3, 4, 1);
         ctx.fillRect(px + 2, faceY - 3, 4, 1);
+      } else if (playerEmotion === 'smug' || (activePowerups.rapid > 0 || activePowerups.spread > 0)) {
+        // Smug/confident for power-ups
+        ctx.fillRect(px - 5, faceY, 3, 2);
+        ctx.fillRect(px + 3, faceY, 3, 2);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(px - 6, faceY - 1, 4, 1);
+        ctx.fillRect(px + 2, faceY - 1, 4, 1);
+      } else if (playerEmotion === 'proud' || multiplier >= 4) {
+        // Intense/proud for big combo
+        ctx.fillRect(px - 4, faceY - 1, 2, 4);
+        ctx.fillRect(px + 3, faceY - 1, 2, 4);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(px - 5, faceY - 3, 3, 1);
+        ctx.fillRect(px + 3, faceY - 3, 3, 1);
+      } else if (lives <= 1 || playerEmotion === 'panicked') {
+        // Panicked
+        ctx.fillRect(px - 5, faceY - 1, 2, 4);
+        ctx.fillRect(px + 4, faceY - 1, 2, 4);
       } else {
-        // Normal round eyes
         ctx.fillRect(px - 5, faceY, 3, 3);
         ctx.fillRect(px + 3, faceY, 3, 3);
       }
       
       // Mouth - changes with emotion
       ctx.fillStyle = '#112';
-      if (playerEmotion === 'happy') {
+      if (playerEmotion === 'happy' || playerEmotion === 'smug') {
         // Big happy smile
         ctx.fillRect(px - 4, faceY + 2, 8, 2);
-        // Teeth highlight
         ctx.fillStyle = '#fff';
         ctx.fillRect(px - 2, faceY + 2, 4, 1);
+      } else if (playerEmotion === 'proud' || multiplier >= 4) {
+        ctx.fillRect(px - 4, faceY + 2, 8, 2);
+      } else if (lives <= 1 || playerEmotion === 'panicked') {
+        ctx.fillRect(px - 3, faceY + 2, 6, 1);
+        ctx.fillRect(px - 2, faceY + 4, 4, 1);
       } else {
-        // Neutral mouth
         ctx.fillRect(px - 2, faceY + 3, 4, 1);
       }
       
@@ -935,6 +1344,30 @@
         ctx.fillStyle = '#f77';
         ctx.fillRect(px - 8, faceY + 1, 2, 2);
         ctx.fillRect(px + 7, faceY + 1, 2, 2);
+      }
+
+      // Shield bubble
+      if (activePowerups.shield > 0) {
+        ctx.strokeStyle = 'rgba(0,255,255,0.6)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(px, py, 28, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+
+      // Damage states when low health
+      if (lives <= 1) {
+        // Cracks on ship
+        ctx.fillStyle = '#333';
+        ctx.fillRect(px - 10, py - 2, 8, 1);
+        ctx.fillRect(px + 2, py + 3, 6, 1);
+        ctx.fillRect(px - 5, py + 5, 3, 1);
+        
+        // Smoke from thrusters
+        ctx.fillStyle = 'rgba(100,100,100,0.6)';
+        ctx.fillRect(px - 15 + Math.random()*3, py + 10, 3, 2);
+        ctx.fillRect(px + 10 + Math.random()*3, py + 10, 3, 2);
       }
       
       // Thrusters
@@ -969,11 +1402,46 @@
         ctx.fillRect(eb.x - 1, eb.y + 3, 2, 4);
         ctx.fillStyle = '#f55';
       }
+
+      // Destructible barriers (classic bases)
+      for (const b of barriers) {
+        if (b.health > 0) {
+          const dmg = (4 - b.health) * 0.2;
+          ctx.fillStyle = `rgb(${180 - dmg*50}, ${140 - dmg*30}, ${100})`;
+          ctx.fillRect(b.x, b.y, b.width, b.height * (b.health / 4));
+          ctx.fillStyle = '#333';
+          for (let d=0; d < 4-b.health; d++) {
+            ctx.fillRect(b.x + 5 + d*10, b.y + 5, 8, 2);
+          }
+        }
+      }
+
+      // Boss
+      if (boss) {
+        ctx.fillStyle = '#c00';
+        ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+        // Big expressive face
+        ctx.fillStyle = '#111';
+        ctx.fillRect(boss.x + 15, boss.y + 12, 12, 10);
+        ctx.fillRect(boss.x + boss.width - 27, boss.y + 12, 12, 10);
+        ctx.fillStyle = boss.emotion === 'celebrate' ? '#0f0' : '#f00';
+        ctx.fillRect(boss.x + 25, boss.y + 30, boss.width - 50, 8); // mouth
+      }
+
+      // Power-ups (glowing orbs)
+      for (const p of powerups) {
+        ctx.fillStyle = p.type === 'rapid' ? '#ff0' : (p.type === 'spread' ? '#0f0' : '#0ff');
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(p.x - 2, p.y - 2, 4, 4); // core
+      }
       
       // Enemies - now with expressive happy/sad/celebrate faces!
       for (const enemy of enemies) {
         const ex = enemy.x;
-        const ey = enemy.y;
+        const ey = enemy.y + Math.sin(Date.now() / 150 + enemy.id) * 1.5; // 2-frame bob animation
         const w = enemy.width;
         const h = enemy.height;
         const emotion = enemy.emotion || 'neutral';
@@ -1059,20 +1527,39 @@
           ctx.fillStyle = '#c70';
           ctx.fillRect(ex + 3, ey + 2, 3, 4);
           ctx.fillRect(ex + w - 6, ey + 2, 3, 4);
-        } else {
+        } else if (enemy.type === 2) {
           // Fast type little wings
           ctx.fillStyle = '#08c';
           ctx.fillRect(ex - 2, ey + 8, 4, 3);
           ctx.fillRect(ex + w - 2, ey + 8, 4, 3);
+        } else if (enemy.type === 3) {
+          // Bomber - extra bottom detail
+          ctx.fillStyle = '#a80';
+          ctx.fillRect(ex + 5, ey + h - 3, w - 10, 3);
+        } else {
+          // Diver/Scout - pointy
+          ctx.fillStyle = '#6c6';
+          ctx.beginPath();
+          ctx.moveTo(ex + w/2, ey + h + 2);
+          ctx.lineTo(ex + 4, ey + h - 2);
+          ctx.lineTo(ex + w - 4, ey + h - 2);
+          ctx.fill();
         }
       }
       
-      // Particles (explosions)
+      // Particles (explosions + special)
       for (const p of particles) {
         const alpha = Math.max(0.1, p.life / 30);
         ctx.globalAlpha = alpha;
         ctx.fillStyle = p.color;
-        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        if (p.type === 'heart') {
+          // Simple heart shape with rects
+          ctx.fillRect(p.x - 1, p.y - 1, 3, 2);
+          ctx.fillRect(p.x - 2, p.y, 2, 2);
+          ctx.fillRect(p.x + 1, p.y, 2, 2);
+        } else {
+          ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        }
       }
       ctx.globalAlpha = 1;
       
@@ -1080,14 +1567,65 @@
       ctx.fillStyle = '#555';
       ctx.font = '12px "Press Start 2P", monospace';
       ctx.fillText('WAVE ' + wave, WIDTH - 110, 30);
+
+      if (multiplier > 1) {
+        ctx.fillStyle = '#ff0';
+        ctx.fillText('x' + multiplier, 30, 50);
+      }
+
+      // Active power-ups
+      let puY = 70;
+      for (let key in activePowerups) {
+        if (activePowerups[key] > 0) {
+          ctx.fillStyle = '#0ff';
+          ctx.fillText(key.toUpperCase() + ' ' + Math.ceil(activePowerups[key]/60), 30, puY);
+          puY += 16;
+        }
+      }
       
       if (gameState === 'playing' && enemies.length < 8) {
         // Danger indicator
         ctx.fillStyle = '#f33';
         ctx.fillText('!!!', 30, 30);
+        // Pulsing red border
+        const pulse = Math.sin(Date.now() / 150) * 0.5 + 0.5;
+        ctx.strokeStyle = `rgba(255,0,0,${0.3 + pulse * 0.4})`;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(2, 2, WIDTH - 4, HEIGHT - 4);
+        ctx.lineWidth = 1;
+      }
+
+      // CRT effects - scanlines + vignette for 80s arcade feel
+      if (crtEnabled) {
+        // Scanlines
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        for (let y = 0; y < HEIGHT; y += 3) {
+          ctx.fillRect(-50, y, WIDTH + 100, 1);
+        }
+        
+        // Vignette
+        const grad = ctx.createRadialGradient(WIDTH/2, HEIGHT/2, Math.min(WIDTH,HEIGHT)*0.4, WIDTH/2, HEIGHT/2, Math.max(WIDTH,HEIGHT)*0.7);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(-50, -50, WIDTH+100, HEIGHT+100);
+        
+        // Subtle bloom on bright areas (fake with overlay)
+        ctx.fillStyle = 'rgba(255,255,200,0.03)';
+        ctx.fillRect(0,0,WIDTH,HEIGHT);
       }
       
       // Game over or start overlays are handled by DOM
+      if (paused) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.fillStyle = '#fff';
+        ctx.font = '24px "Press Start 2P", monospace';
+        ctx.fillText('PAUSED', WIDTH/2 - 70, HEIGHT/2);
+        ctx.font = '12px "Press Start 2P", monospace';
+        ctx.fillText('PRESS P TO RESUME', WIDTH/2 - 110, HEIGHT/2 + 30);
+      }
+      ctx.restore();
     }
     
     function gameLoop() {
