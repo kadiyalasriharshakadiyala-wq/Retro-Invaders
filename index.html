@@ -198,7 +198,11 @@
       y: HEIGHT - 60,
       width: 40,
       height: 20,
-      speed: 5.5
+      speed: 5.5,
+      vx: 0,
+      maxSpeed: 6,
+      accel: 0.6,
+      friction: 0.85
     };
     
     // Arrays
@@ -210,6 +214,7 @@
     let enemyBullets = [];
     let powerups = [];
     let barriers = []; // destructible bases
+    let scorePops = []; // for satisfying score feedback
     let boss = null; // for boss waves
     
     // Input
@@ -347,6 +352,7 @@
       enemyBullets = [];
       player.x = WIDTH / 2;
       player.y = HEIGHT - 60;
+      player.vx = 0;
       enemyDirection = 1;
       enemySpeed = 1.9;
       enemyDropAmount = 20;
@@ -369,6 +375,7 @@
       stats = { destroyed: 0, happyMade: 0, sadMade: 0, scaredMade: 0 };
       grudgeEnemyType = -1;
       grudgeHits = 0;
+      scorePops = [];
 
       // Init destructible barriers
       barriers = [];
@@ -401,7 +408,7 @@
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           enemies.push({
-            x: startX + c * spacingX,
+            x: startX + c * spacingX + (Math.random() - 0.5) * 4, // slight organic variation
             y: startY + r * spacingY,
             width: 32,
             height: 24,
@@ -421,7 +428,7 @@
       document.getElementById('stars').textContent = earnedStars;
     }
     
-    function createParticles(x, y, count, color = '#ff0') {
+    function createParticles(x, y, count, color = '#ff0', type = 'normal') {
       triggerShake(3);
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
@@ -430,10 +437,13 @@
           x: x,
           y: y,
           vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          life: 24 + Math.random() * 14,
+          vy: Math.sin(angle) * speed - (type === 'debris' ? 0.5 : 0), // slight gravity for debris
+          life: type === 'smoke' ? 40 + Math.random() * 20 : 24 + Math.random() * 14,
           color: color,
-          size: Math.random() * 3.5 + 1.5
+          size: type === 'smoke' ? Math.random() * 5 + 2 : Math.random() * 3.5 + 1.5,
+          rotation: Math.random() * Math.PI * 2,
+          rotSpeed: (Math.random() - 0.5) * 0.2,
+          type: type
         });
       }
     }
@@ -441,18 +451,25 @@
     function update() {
       if (gameState !== 'playing' || paused) return;
       
-      // Player movement
-      let moving = false;
+      // Player movement - with acceleration for more realistic and enjoyable feel
       if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
-        player.x -= player.speed;
-        moving = true;
+        player.vx -= player.accel;
       }
       if (keys['ArrowRight'] || keys['d'] || keys['D']) {
-        player.x += player.speed;
-        moving = true;
+        player.vx += player.accel;
       }
       
-      // Clamp player
+      // Apply friction
+      player.vx *= player.friction;
+      
+      // Clamp speed
+      if (player.vx > player.maxSpeed) player.vx = player.maxSpeed;
+      if (player.vx < -player.maxSpeed) player.vx = -player.maxSpeed;
+      
+      // Apply velocity
+      player.x += player.vx;
+      
+      // Clamp player to bounds
       const half = player.width / 2;
       player.x = Math.max(half, Math.min(WIDTH - half, player.x));
       
@@ -493,10 +510,15 @@
         }
       }
       
-      // Update enemy bullets (they shoot down at us)
+      // Update enemy bullets (aimed for realistic challenge)
       for (let i = enemyBullets.length - 1; i >= 0; i--) {
         const eb = enemyBullets[i];
-        eb.y += eb.speed;
+        if (eb.vx !== undefined) {
+          eb.x += eb.vx;
+          eb.y += eb.vy;
+        } else {
+          eb.y += eb.speed;
+        }
         
         // Check barriers
         let hitBar = false;
@@ -552,18 +574,32 @@
       }
       
       // Dedicated enemy shooting timer (guarantees shots even if movement slows)
-      const enemyShootInterval = Math.max(420, 1150 - wave * 85);
+      // More aggressive shooting as game progresses for addictiveness
+      const baseInterval = Math.max(420, 1150 - wave * 85);
+      const dangerFactor = lives <= 1 ? 0.6 : 1;
+      const enemyShootInterval = baseInterval * dangerFactor;
       if (currentTime - lastEnemyShot > enemyShootInterval && enemies.length > 0) {
         enemyShoot();
       }
       
-      // Update particles
+      // Update particles - more realistic physics
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.vy += 0.05; // slight gravity
+        
+        // Gravity for debris
+        if (p.type === 'debris') p.vy += 0.08;
+        else p.vy += 0.02; // light gravity
+        
         p.life -= 1;
+        
+        // Rotation
+        if (p.rotSpeed) p.rotation += p.rotSpeed;
+        
+        // Friction
+        p.vx *= 0.98;
+        p.vy *= 0.98;
         
         if (p.life <= 0) {
           particles.splice(i, 1);
@@ -605,11 +641,20 @@
           powerups.splice(i, 1);
           playSound('powerup');
           triggerShake(2);
+          createParticles(player.x, player.y - 10, 8, '#fff', 'normal');
         }
       }
 
       // Parallax movement
       parallaxOffset = (parallaxOffset + 0.2) % 100;
+
+      // Update score pops
+      for (let i = scorePops.length - 1; i >= 0; i--) {
+        const pop = scorePops[i];
+        pop.y -= 1;
+        pop.life--;
+        if (pop.life <= 0) scorePops.splice(i, 1);
+      }
 
       // Decay power-ups
       for (let key in activePowerups) {
@@ -663,9 +708,18 @@
             stats.destroyed++;
             updateHUD();
             
-            // Create explosion
+            // Satisfying score popup
+            scorePops.push({
+              x: enemy.x + enemy.width / 2,
+              y: enemy.y,
+              value: points,
+              life: 40
+            });
+            
+            // Create explosion - mix of debris and sparks for realistic feel
             const color = enemy.type === 0 ? '#f44' : (enemy.type === 1 ? '#fa4' : '#4ff');
-            createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 9, color);
+            createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 5, color, 'debris');
+            createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 4, '#ffdd44', 'normal');
             
             // Special heart/confetti if happy enemy killed (emotional reward)
             if (enemy.emotion === 'happy') {
@@ -733,8 +787,14 @@
           player.y - player.height / 2 < enemy.y + enemy.height &&
           player.y + player.height / 2 > enemy.y
         ) {
-          loseLife();
-          createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 12, '#f80');
+          if (activePowerups.shield > 0) {
+            activePowerups.shield = 0;
+            createParticles(player.x, player.y, 10, '#0ff', 'smoke');
+            triggerShake(5);
+          } else {
+            loseLife();
+            createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 12, '#f80');
+          }
           enemies.splice(i, 1);
           break;
         }
@@ -760,9 +820,11 @@
           playSound('enemyShoot'); // taunt when hit
           if (activePowerups.shield > 0) {
             activePowerups.shield = 0;
-            createParticles(player.x, player.y, 8, '#0ff');
+            createParticles(player.x, player.y, 5, '#0ff', 'smoke');
+          createParticles(player.x, player.y, 3, '#fff', 'normal');
           } else {
-            createParticles(player.x, player.y - 5, 11, '#f44');
+            createParticles(player.x, player.y - 5, 6, '#f44', 'debris');
+            createParticles(player.x, player.y - 5, 5, '#666', 'smoke');
             loseLife();
           }
           break;
@@ -869,12 +931,19 @@
       const sorted = [...enemies].sort((a, b) => b.y - a.y);
       const shooter = sorted[Math.floor(Math.random() * Math.min(4, sorted.length))];
       
+      // Aim at player for more realistic and challenging feel
+      const dx = player.x - (shooter.x + shooter.width / 2);
+      const dy = player.y - (shooter.y + shooter.height);
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      const bulletSpeed = 3.5 + Math.min(2.5, wave * 0.3);
+      
       enemyBullets.push({
         x: shooter.x + shooter.width / 2,
         y: shooter.y + shooter.height + 1,
         width: 4,
         height: 11,
-        speed: 3.8 + Math.min(2.2, wave * 0.28),
+        vx: (dx / dist) * bulletSpeed,
+        vy: (dy / dist) * bulletSpeed,
         shooterId: shooter.id
       });
       
@@ -927,8 +996,9 @@
         grudgeEnemyType = Math.floor(Math.random() * 5);
       }
       
-      // Small screen shake via particles
-      createParticles(player.x, player.y, 7, '#f88');
+      // Small screen shake via particles - smoke and debris for realistic impact
+      createParticles(player.x, player.y, 5, '#666', 'smoke');
+      createParticles(player.x, player.y, 4, '#f88', 'debris');
       
       // Push enemies back a little on hit
       for (const e of enemies) {
@@ -1426,9 +1496,7 @@
       // Draw player (ship) - animated, organic, interesting retro design (no basic rectangles)
       const px = player.x;
       const py = player.y;
-      const isMovingLeft = keys['ArrowLeft'] || keys['a'] || keys['A'];
-      const isMovingRight = keys['ArrowRight'] || keys['d'] || keys['D'];
-      const tilt = isMovingLeft ? -0.12 : (isMovingRight ? 0.12 : 0);
+      const tilt = Math.max(-0.15, Math.min(0.15, player.vx * 0.03)); // realistic tilt based on velocity
 
       ctx.save();
       ctx.translate(px, py);
@@ -1538,7 +1606,7 @@
       ctx.fillRect(px + 8, py + 6 + thrustBob, 5, 5);
       
       if (gameState === 'playing') {
-        if (isMovingLeft || isMovingRight) {
+        if (Math.abs(player.vx) > 0.5) {
           ctx.fillStyle = '#fa0';
           ctx.fillRect(px - 12, py + 9 + thrustBob, 3, 4);
           ctx.fillRect(px + 9, py + 9 + thrustBob, 3, 4);
@@ -1567,23 +1635,25 @@
         ctx.lineWidth = 1;
       }
       
-      // Bullets
-      ctx.fillStyle = '#ff0';
+      // Bullets - with trail for realistic feel
       for (const b of bullets) {
+        ctx.fillStyle = b.piercing ? '#0ff' : '#ff0';
         ctx.fillRect(b.x - b.width / 2, b.y, b.width, b.height);
-        // small glow
-        ctx.fillStyle = '#ff8';
+        // Trail
+        ctx.fillStyle = b.piercing ? 'rgba(0,255,255,0.4)' : 'rgba(255,255,0,0.4)';
+        ctx.fillRect(b.x - b.width / 2, b.y + b.height, b.width, 6);
+        ctx.fillStyle = b.piercing ? '#fff' : '#ff8';
         ctx.fillRect(b.x - 1, b.y + 2, 2, 4);
-        ctx.fillStyle = '#ff0';
       }
       
-      // Enemy bullets (red/pink projectiles coming down)
-      ctx.fillStyle = '#f55';
+      // Enemy bullets - with slight trail for impact feel
       for (const eb of enemyBullets) {
+        ctx.fillStyle = '#f55';
         ctx.fillRect(eb.x - eb.width / 2, eb.y, eb.width, eb.height);
+        ctx.fillStyle = 'rgba(255,100,100,0.4)';
+        ctx.fillRect(eb.x - eb.width / 2, eb.y - 5, eb.width, 5);
         ctx.fillStyle = '#faa';
         ctx.fillRect(eb.x - 1, eb.y + 3, 2, 4);
-        ctx.fillStyle = '#f55';
       }
 
       // Destructible barriers (classic bases)
@@ -1769,19 +1839,30 @@
         }
       }
       
-      // Particles (explosions + special)
+      // Particles - more realistic with rotation and variety
       for (const p of particles) {
-        const alpha = Math.max(0.1, p.life / 30);
+        const alpha = Math.max(0.05, p.life / (p.type === 'smoke' ? 50 : 30));
         ctx.globalAlpha = alpha;
         ctx.fillStyle = p.color;
+        
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        if (p.rotation) ctx.rotate(p.rotation);
+        
         if (p.type === 'heart') {
-          // Simple heart shape with rects
-          ctx.fillRect(p.x - 1, p.y - 1, 3, 2);
-          ctx.fillRect(p.x - 2, p.y, 2, 2);
-          ctx.fillRect(p.x + 1, p.y, 2, 2);
+          ctx.fillRect(-1.5, -1, 3, 2);
+          ctx.fillRect(-2, 0, 2, 2);
+          ctx.fillRect(0, 0, 2, 2);
+        } else if (p.type === 'smoke') {
+          // Soft smoke circles
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+          ctx.fill();
         } else {
-          ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+          // Debris with slight elongation
+          ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
         }
+        ctx.restore();
       }
       ctx.globalAlpha = 1;
       
@@ -1790,9 +1871,22 @@
       ctx.font = '12px "Press Start 2P", monospace';
       ctx.fillText('WAVE ' + wave, WIDTH - 110, 30);
 
+      // Score popups for enjoyable feedback
+      ctx.fillStyle = '#ff0';
+      for (const pop of scorePops) {
+        const alpha = pop.life / 40;
+        ctx.globalAlpha = alpha;
+        ctx.fillText('+' + pop.value, pop.x - 10, pop.y);
+      }
+      ctx.globalAlpha = 1;
+
       if (multiplier > 1) {
-        ctx.fillStyle = '#ff0';
-        ctx.fillText('x' + multiplier, 30, 50);
+        const pulse = 1 + Math.sin(Date.now() / 150) * 0.2;
+        ctx.save();
+        ctx.scale(pulse, pulse);
+        ctx.fillStyle = multiplier >= 4 ? '#f80' : '#ff0';
+        ctx.fillText('x' + multiplier, 30 / pulse, 50 / pulse);
+        ctx.restore();
       }
 
       // Active power-ups
@@ -1815,6 +1909,13 @@
         ctx.lineWidth = 4;
         ctx.strokeRect(2, 2, WIDTH - 4, HEIGHT - 4);
         ctx.lineWidth = 1;
+      }
+      
+      // Low health warning for realistic tension
+      if (gameState === 'playing' && lives <= 1) {
+        const pulse = Math.sin(Date.now() / 100) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(255,0,0,${0.1 + pulse * 0.15})`;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
       }
 
       // CRT effects - scanlines + vignette for 80s arcade feel
