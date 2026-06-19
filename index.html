@@ -576,9 +576,10 @@
             createParticles(b.x, b.y, 4, '#888', 'debris');
             createParticles(b.x, b.y, 2, '#666', 'normal');
             if (bar.health <= 0) {
-              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 10, '#888', 'debris');
-              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 3, '#fff', 'ring');
-              triggerShake(5);
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 15, '#888', 'debris');
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 5, '#fff', 'ring');
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 6, '#666', 'smoke');
+              triggerShake(8);
             }
             break;
           }
@@ -618,9 +619,10 @@
             createParticles(eb.x, eb.y, 4, '#888', 'debris');
             createParticles(eb.x, eb.y, 1, '#fff', 'ring');
             if (bar.health <= 0) {
-              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 10, '#888', 'debris');
-              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 3, '#fff', 'ring');
-              triggerShake(5);
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 15, '#888', 'debris');
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 5, '#fff', 'ring');
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 6, '#666', 'smoke');
+              triggerShake(8);
             }
             hitBar = true;
             break;
@@ -634,6 +636,37 @@
             makeEnemySad(eb.shooterId);
           }
           enemyBullets.splice(i, 1);
+        } else {
+          // Near-miss reward system
+          const dist = Math.hypot(eb.x - player.x, eb.y - player.y);
+          if (dist < 35 && dist > 15 && !eb.nearMiss) {
+            eb.nearMiss = true;
+            score += 25;
+            combo++;
+            comboTimer = Math.max(comboTimer, 60);
+            createParticles(eb.x, eb.y, 3, '#ffff88', 'normal');
+            if (playerEmotion === 'neutral') {
+              playerEmotion = 'proud';
+              playerEmotionTime = 15;
+            }
+            // Near-miss sound
+            try {
+              if (audioCtx) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 1200;
+                gain.gain.value = 0.08 * masterVolume;
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                const t = audioCtx.currentTime;
+                osc.start(t);
+                osc.frequency.linearRampToValueAtTime(800, t + 0.08);
+                gain.gain.linearRampToValueAtTime(0.001, t + 0.1);
+                osc.stop(t + 0.12);
+              }
+            } catch(e) {}
+          }
         }
       }
       
@@ -647,6 +680,11 @@
         for (const enemy of enemies) {
           let speedMod = activePowerups.slowmo > 0 ? 0.4 : 1;
           let xMove = enemyDirection * enemySpeed * speedMod;
+          // High combo makes scared enemies erratic
+          if (multiplier >= 5 && enemy.emotion === 'sad' && Math.random() < 0.3) {
+            xMove += (Math.random() - 0.5) * 8;
+            enemy.y += (Math.random() - 0.5) * 3;
+          }
           // Extra behavior for variety (scout/dodger type)
           if (enemy.type === 4 && Math.random() < 0.02) {
             xMove *= -0.5; // occasional dodge
@@ -796,10 +834,23 @@
       // Combo decay
       if (comboTimer > 0) {
         comboTimer--;
-        // High combo makes enemies scared
-        if (multiplier >= 4 && enemies.length > 0 && Math.random() < 0.05) {
-          const idx = Math.floor(Math.random() * enemies.length);
-          makeEnemyScared(enemies[idx].id);
+        // High combo makes nearby enemies scared + erratic
+        if (multiplier >= 5 && enemies.length > 0 && Math.random() < 0.08) {
+          // Find nearby enemy
+          let closest = null;
+          let minDist = 150;
+          for (const e of enemies) {
+            const d = Math.hypot(e.x - player.x, e.y - player.y);
+            if (d < minDist) {
+              minDist = d;
+              closest = e;
+            }
+          }
+          if (closest) {
+            makeEnemyScared(closest.id);
+            closest.emotion = 'sad';
+            closest.emotionTime = 90;
+          }
         }
       } else if (combo > 0) {
         if (multiplier >= 4) {
@@ -839,6 +890,12 @@
             biggestCombo = Math.max(biggestCombo, multiplier);
             stats.destroyed++;
             updateHUD();
+
+            // Hit impact effects
+            enemy.y -= 4; // small knockback
+            if (typeof bullet.vx !== 'undefined') enemy.x += bullet.vx * 0.3;
+            enemy.hitFlash = 6; // brief white flash
+            createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 1, '#fff', 'ring'); // expanding ring
             
             // Satisfying score popup
             scorePops.push({
@@ -858,31 +915,58 @@
             // Kill feedback variety based on mood
             if (enemy.emotion === 'happy') {
               // Happy: pink hearts + confetti
-              for (let i = 0; i < 6; i++) {
+              for (let i = 0; i < 8; i++) {
                 particles.push({
                   x: enemy.x + enemy.width / 2,
                   y: enemy.y + enemy.height / 2,
-                  vx: (Math.random() - 0.5) * 4,
-                  vy: (Math.random() - 1.5) * 3,
-                  life: 35,
+                  vx: (Math.random() - 0.5) * 5,
+                  vy: (Math.random() - 1.5) * 4,
+                  life: 40,
                   color: '#ff69b4',
-                  size: 3,
+                  size: 3 + Math.random(),
                   type: 'heart'
                 });
               }
-              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 3, '#ff69b4', 'normal');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 5, '#ff69b4', 'normal');
             } else if (enemy.emotion === 'sad') {
               // Scared/sad: blueish + faster debris
-              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 6, '#88ccff', 'debris');
-              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 3, '#4444ff', 'normal');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 8, '#88ccff', 'debris');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 4, '#4444ff', 'normal');
+              for (let i = 0; i < 3; i++) {
+                particles.push({
+                  x: enemy.x + enemy.width / 2,
+                  y: enemy.y + enemy.height / 2,
+                  vx: (Math.random() - 0.5) * 3,
+                  vy: -2 - Math.random() * 2,
+                  life: 25,
+                  color: '#88aaff',
+                  size: 2,
+                  type: 'normal'
+                });
+              }
             } else if (boss && boss.health <= 0) {
-              // Boss big explosion
-              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 15, '#ff0', 'debris');
-              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 10, '#ffdd44', 'normal');
-              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 5, '#fff', 'ring');
+              // Boss big explosion + sparks
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 20, '#ff0', 'debris');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 12, '#ffdd44', 'normal');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 6, '#fff', 'ring');
+              for (let i = 0; i < 8; i++) {
+                particles.push({
+                  x: enemy.x + enemy.width / 2,
+                  y: enemy.y + enemy.height / 2,
+                  vx: (Math.random() - 0.5) * 6,
+                  vy: (Math.random() - 0.5) * 6,
+                  life: 30,
+                  color: '#ffff00',
+                  size: 2,
+                  rotation: Math.random() * Math.PI * 2,
+                  rotSpeed: (Math.random() - 0.5) * 0.3,
+                  type: 'normal'
+                });
+              }
             } else {
               // Normal
-              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 3, color, 'debris');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 5, color, 'debris');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 3, '#ffdd44', 'normal');
             }
             
             // Small knockback for impact feel
@@ -1254,7 +1338,13 @@
         "The boss probably had a family. Probably.",
         "You are the reason aliens don't visit Earth anymore.",
         "Biggest combo of the day. They never stood a chance.",
-        "The last one tried to surrender. You didn't notice."
+        "The last one tried to surrender. You didn't notice.",
+        "That grudge enemy is probably writing a memoir right now.",
+        "You cleared that wave like it owed you money.",
+        "High combo? The enemies are filing a class action lawsuit.",
+        "No damage run? The barriers are jealous.",
+        "You made more enemies happy than a therapist on overtime.",
+        "Scared them all? Mission accomplished, space hero."
       ];
       const randomLine = funnyLines[Math.floor(Math.random() * funnyLines.length)];
       
@@ -1443,7 +1533,13 @@
         "The boss probably had a family. Probably.",
         "You are the reason aliens don't visit Earth anymore.",
         "Biggest combo of the day. They never stood a chance.",
-        "The last one tried to surrender. You didn't notice."
+        "The last one tried to surrender. You didn't notice.",
+        "That grudge enemy is probably writing a memoir right now.",
+        "You cleared that wave like it owed you money.",
+        "High combo? The enemies are filing a class action lawsuit.",
+        "No damage run? The barriers are jealous.",
+        "You made more enemies happy than a therapist on overtime.",
+        "Scared them all? Mission accomplished, space hero."
       ];
       const randomLine = funnyLines[Math.floor(Math.random() * funnyLines.length)];
       const text = `RETRO INVADERS\nScore: ${score} | Wave: ${wave} | Max Combo: x${biggestCombo}\nDestroyed: ${stats.destroyed} | Happy: ${stats.happyMade} | Sad: ${stats.sadMade}\n${randomLine}\n\nPlay now: https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders`;
@@ -1712,7 +1808,8 @@
       
       // Dynamic intensity based on wave and danger (lives/enemies)
       const danger = Math.max(0, (3 - lives) / 3 + (enemies.length < 5 ? 0.5 : 0));
-      const intensity = Math.min(1.5, 1 + (wave - 1) * 0.1 + danger * 0.4);
+      const comboIntensity = Math.max(0, (multiplier - 3) * 0.15);
+      const intensity = Math.min(2.0, 1 + (wave - 1) * 0.1 + danger * 0.4 + comboIntensity);
       
       // Lead melody (chiptune square)
       if (lead > 0) {
@@ -1732,6 +1829,11 @@
       // Add taunt melody when enemies hit player recently (simple danger layer)
       if (danger > 0.5 && step % 8 === 0) {
         playMusicNote(440 + danger * 100, 0.08, 'square', 0.05 * intensity);
+      }
+      
+      // Extra layer for high combo
+      if (multiplier >= 4 && step % 2 === 0) {
+        playMusicNote(660 + (multiplier - 4) * 40, 0.06, 'sine', 0.04 * intensity);
       }
       
       musicBeat++;
@@ -2311,29 +2413,33 @@
       }
 
       if (multiplier > 1) {
-        const pulse = 1 + Math.sin(Date.now() / 150) * 0.2;
-        ctx.save();
-        ctx.scale(pulse, pulse);
+        let size = 12;
         let multColor = '#ff0';
         let borderAlpha = 0;
         if (multiplier >= 6) {
           multColor = '#f0f';
-          borderAlpha = 0.3 + Math.sin(Date.now()/100)*0.2;
+          size = 18;
+          borderAlpha = 0.4 + Math.sin(Date.now()/80)*0.3;
+          triggerShake(1); // light shake per frame at very high
         } else if (multiplier >= 4) {
           multColor = '#f80';
-          borderAlpha = 0.2 + Math.sin(Date.now()/120)*0.15;
+          size = 15;
+          borderAlpha = 0.25 + Math.sin(Date.now()/100)*0.2;
         }
+        const pulse = 1 + Math.sin(Date.now() / 120) * 0.25;
+        ctx.save();
+        ctx.scale(pulse, pulse);
         ctx.fillStyle = multColor;
-        ctx.font = `${Math.floor(14 * pulse)}px "Press Start 2P", monospace`;
+        ctx.font = `${Math.floor(size * pulse)}px "Press Start 2P", monospace`;
         ctx.fillText('x' + multiplier, 30 / pulse, 50 / pulse);
         ctx.font = '12px "Press Start 2P", monospace';
         ctx.restore();
         
-        // Subtle screen border glow at high combo
+        // Screen border glow at high combo
         if (borderAlpha > 0) {
           ctx.strokeStyle = `rgba(255,150,0,${borderAlpha})`;
-          ctx.lineWidth = 3;
-          ctx.strokeRect(3, 3, WIDTH-6, HEIGHT-6);
+          ctx.lineWidth = 4;
+          ctx.strokeRect(2, 2, WIDTH-4, HEIGHT-4);
           ctx.lineWidth = 1;
         }
       }
