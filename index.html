@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RETRO INVADERS</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&amp;display=swap');
+    
+    body {
+      margin: 0;
+      background: #0a0a0a;
+      color: #fff;
+      font-family: "Press Start 2P", system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      user-select: none;
+    }
+    
+    h1 {
+      font-size: 28px;
+      margin: 0 0 10px;
+      text-shadow: 0 0 10px #0ff;
+      letter-spacing: 2px;
+    }
+    
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      width: 800px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    
+    .hud div {
+      background: #111;
+      padding: 8px 16px;
+      border: 2px solid #333;
+    }
+    
+    canvas {
+      border: 4px solid #333;
+      background: #000;
+      image-rendering: pixelated;
+      box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+    }
+    
+    .info {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #888;
+      text-align: center;
+      line-height: 1.6;
+    }
+    
+    .info span {
+      color: #0ff;
+      font-weight: bold;
+    }
+    
+    .overlay {
+      position: absolute;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 800px;
+      height: 600px;
+      background: rgba(0, 0, 0, 0.75);
+      font-size: 18px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    
+    .overlay.visible {
+      display: flex;
+    }
+    
+    .overlay button {
+      margin-top: 20px;
+      padding: 12px 32px;
+      font-family: "Press Start 2P", system-ui, sans-serif;
+      font-size: 14px;
+      background: #0ff;
+      color: #000;
+      border: none;
+      cursor: pointer;
+      pointer-events: all;
+    }
+    
+    .overlay button:hover {
+      background: #0cc;
+    }
+    
+    .title {
+      font-size: 36px;
+      margin-bottom: 10px;
+      text-shadow: 0 0 15px #0ff;
+    }
+    
+    .final-score {
+      font-size: 24px;
+      margin: 10px 0;
+      color: #ff0;
+    }
+  </style>
+</head>
+<body>
+  <h1>RETRO INVADERS</h1>
+  
+  <div class="hud">
+    <div>SCORE: <span id="score">00000</span></div>
+    <div>HIGH: <span id="high-score">00000</span></div>
+    <div>LIVES: <span id="lives">3</span></div>
+  </div>
+  
+  <div style="width: 800px; display: flex; justify-content: flex-end; margin-bottom: 4px;">
+    <button id="music-btn" onclick="toggleMusic()" style="font-family: 'Press Start 2P', system-ui, sans-serif; font-size: 10px; background: #222; color: #0ff; border: 2px solid #444; padding: 4px 10px; cursor: pointer;">♪ ON</button>
+  </div>
+  
+  <div style="position: relative;">
+    <canvas id="game" width="800" height="600"></canvas>
+    
+    <!-- Start Screen -->
+    <div id="start-screen" class="overlay visible" style="pointer-events: all;">
+      <div class="title">RETRO INVADERS</div>
+      <div style="margin: 12px 0; font-size: 14px; color: #0ff;">The 8-bit classic returns!</div>
+      <div style="margin-bottom: 16px; font-size: 13px; color: #ff0;">HIGH SCORE: <span id="menu-high-score">00000</span></div>
+      <button onclick="startGame()">PRESS SPACE OR CLICK TO START</button>
+      <div style="margin-top: 30px; font-size: 11px; color: #666;">
+        ← → MOVE &nbsp;&nbsp;&nbsp; SPACE SHOOT
+      </div>
+    </div>
+    
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="overlay">
+      <div style="font-size: 32px; color: #f44; margin-bottom: 10px;">GAME OVER</div>
+      <div class="final-score">SCORE: <span id="final-score">00000</span></div>
+      <div style="margin-bottom: 12px; font-size: 13px; color: #ff0;">HIGH SCORE: <span id="final-high-score">00000</span></div>
+      <button onclick="restartGame()">PLAY AGAIN (R)</button>
+    </div>
+  </div>
+  
+  <div class="info">
+    <span>ARROW KEYS / A D</span> to move &nbsp;&nbsp; • &nbsp;&nbsp; <span>SPACE</span> to shoot &nbsp;&nbsp; • &nbsp;&nbsp; <span>R</span> to restart &nbsp;&nbsp; • &nbsp;&nbsp; <span>M</span> music
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d', { alpha: true });
+    
+    const WIDTH = 800;
+    const HEIGHT = 600;
+    
+    // Game state
+    let gameState = 'start'; // 'start', 'playing', 'gameover'
+    let score = 0;
+    let lives = 3;
+    let highScore = parseInt(localStorage.getItem('shooterHighScore')) || 0;
+    
+    // Player
+    const player = {
+      x: WIDTH / 2,
+      y: HEIGHT - 60,
+      width: 40,
+      height: 20,
+      speed: 5.5
+    };
+    
+    // Arrays
+    let bullets = [];
+    let enemies = [];
+    let particles = [];
+    let stars = [];
+    let enemyBullets = [];
+    
+    // Input
+    const keys = {};
+    let lastShotTime = 0;
+    const SHOOT_COOLDOWN = 180;
+    
+    // Enemy movement & shooting
+    let enemyDirection = 1;
+    let enemySpeed = 1.9;
+    let enemyDropAmount = 20;
+    let lastEnemyMove = 0;
+    let currentMoveInterval = 340;
+    let lastEnemyShot = 0;
+    
+    // Wave tracking
+    let wave = 1;
+    
+    // Emotions for expressive characters
+    let enemyIdCounter = 0;
+    let playerEmotion = 'neutral';
+    let playerEmotionTime = 0;
+    
+    // Music
+    let musicOn = true;
+    let musicTimer = null;
+    let musicBeat = 0;
+    const MUSIC_BASE_TEMPO = 155; // ms per step, nostalgic 8-bit feel
+    
+    function initStars() {
+      stars = [];
+      for (let i = 0; i < 120; i++) {
+        stars.push({
+          x: Math.random() * WIDTH,
+          y: Math.random() * HEIGHT,
+          size: Math.random() * 2.5 + 0.5,
+          brightness: Math.random() * 0.6 + 0.4
+        });
+      }
+    }
+    
+    function resetGame() {
+      score = 0;
+      lives = 3;
+      wave = 1;
+      bullets = [];
+      enemies = [];
+      particles = [];
+      enemyBullets = [];
+      player.x = WIDTH / 2;
+      player.y = HEIGHT - 60;
+      enemyDirection = 1;
+      enemySpeed = 1.9;
+      enemyDropAmount = 20;
+      currentMoveInterval = 340;
+      lastEnemyShot = 0;
+      lastEnemyMove = 0;
+      
+      // Reset emotions
+      playerEmotion = 'neutral';
+      playerEmotionTime = 0;
+      enemyIdCounter = 0;
+      
+      updateHUD();
+      document.getElementById('menu-high-score').textContent = String(highScore).padStart(5, '0');
+      createWaveEnemies();
+    }
+    
+    function createWaveEnemies() {
+      enemies = [];
+      // Scale enemies with wave: more rows + columns for higher difficulty
+      const rows = Math.min(5, 3 + Math.floor((wave - 1) / 2));
+      const cols = Math.min(10, 7 + Math.floor(wave / 2));
+      const spacingX = Math.max(56, 74 - wave * 2);
+      const spacingY = 46;
+      const startX = Math.max(50, 95 - wave * 3);
+      const startY = 55 + Math.min(25, wave * 3);
+      
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          enemies.push({
+            x: startX + c * spacingX,
+            y: startY + r * spacingY,
+            width: 32,
+            height: 24,
+            type: (r % 3),
+            id: ++enemyIdCounter,
+            emotion: 'neutral',
+            emotionTime: 0
+          });
+        }
+      }
+    }
+    
+    function updateHUD() {
+      document.getElementById('score').textContent = String(score).padStart(5, '0');
+      document.getElementById('lives').textContent = lives;
+      document.getElementById('high-score').textContent = String(highScore).padStart(5, '0');
+    }
+    
+    function createParticles(x, y, count, color = '#ff0') {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 3.5 + 1.5;
+        particles.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 24 + Math.random() * 14,
+          color: color,
+          size: Math.random() * 3.5 + 1.5
+        });
+      }
+    }
+    
+    function update() {
+      if (gameState !== 'playing') return;
+      
+      // Player movement
+      let moving = false;
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) {
+        player.x -= player.speed;
+        moving = true;
+      }
+      if (keys['ArrowRight'] || keys['d'] || keys['D']) {
+        player.x += player.speed;
+        moving = true;
+      }
+      
+      // Clamp player
+      const half = player.width / 2;
+      player.x = Math.max(half, Math.min(WIDTH - half, player.x));
+      
+      // Shooting
+      const now = Date.now();
+      if ((keys[' '] || keys['Space']) && now - lastShotTime > SHOOT_COOLDOWN) {
+        shoot();
+        lastShotTime = now;
+      }
+      
+      // Update bullets
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.y -= b.speed;
+        
+        if (b.y < 0) {
+          bullets.splice(i, 1);
+        }
+      }
+      
+      // Update enemy bullets (they shoot down at us)
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const eb = enemyBullets[i];
+        eb.y += eb.speed;
+        
+        if (eb.y > HEIGHT) {
+          // Bullet missed - make the shooter sad
+          if (eb.shooterId != null) {
+            makeEnemySad(eb.shooterId);
+          }
+          enemyBullets.splice(i, 1);
+        }
+      }
+      
+      // Update enemies (stepped movement like classic) — faster base + wave scaling
+      const currentTime = Date.now();
+      if (currentTime - lastEnemyMove > currentMoveInterval) {
+        lastEnemyMove = currentTime;
+        
+        let hitEdge = false;
+        
+        for (const enemy of enemies) {
+          enemy.x += enemyDirection * enemySpeed;
+          
+          // Check edges
+          if (enemy.x < 25 || enemy.x + enemy.width > WIDTH - 25) {
+            hitEdge = true;
+          }
+        }
+        
+        if (hitEdge) {
+          enemyDirection *= -1;
+          for (const enemy of enemies) {
+            enemy.y += enemyDropAmount;
+          }
+        }
+        
+        // Occasional enemy shooting on move steps (more aggressive with wave)
+        if (enemies.length > 0 && Math.random() < (0.55 + wave * 0.06)) {
+          enemyShoot();
+        }
+      }
+      
+      // Dedicated enemy shooting timer (guarantees shots even if movement slows)
+      const enemyShootInterval = Math.max(420, 1150 - wave * 85);
+      if (currentTime - lastEnemyShot > enemyShootInterval && enemies.length > 0) {
+        enemyShoot();
+      }
+      
+      // Update particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05; // slight gravity
+        p.life -= 1;
+        
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+      
+      // Update character emotions (decay over time)
+      if (playerEmotionTime > 0) {
+        playerEmotionTime--;
+      } else if (playerEmotion !== 'neutral') {
+        playerEmotion = 'neutral';
+      }
+      
+      for (const e of enemies) {
+        if (e.emotionTime > 0) {
+          e.emotionTime--;
+        } else if (e.emotion !== 'neutral') {
+          e.emotion = 'neutral';
+        }
+      }
+      
+      // Collision: bullets vs enemies
+      for (let bi = bullets.length - 1; bi >= 0; bi--) {
+        const bullet = bullets[bi];
+        const bx = bullet.x - bullet.width / 2;
+        let hit = false;
+        
+        for (let ei = enemies.length - 1; ei >= 0; ei--) {
+          const enemy = enemies[ei];
+          
+          if (
+            bx < enemy.x + enemy.width &&
+            bx + bullet.width > enemy.x &&
+            bullet.y < enemy.y + enemy.height &&
+            bullet.y + bullet.height > enemy.y
+          ) {
+            // Hit!
+            const points = 100 + (enemy.type * 30);
+            score += points;
+            updateHUD();
+            
+            // Create explosion
+            const color = enemy.type === 0 ? '#f44' : (enemy.type === 1 ? '#fa4' : '#4ff');
+            createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 9, color);
+            
+            // Remove
+            enemies.splice(ei, 1);
+            bullets.splice(bi, 1);
+            hit = true;
+            
+            // Play hit sound
+            playSound('hit');
+            
+            // Hero is happy when he kills an enemy!
+            makePlayerHappy();
+            
+            break;
+          }
+        }
+      }
+      
+      // Collision: enemies vs player or bottom
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const enemy = enemies[i];
+        
+        // Enemy reached bottom
+        if (enemy.y + enemy.height > HEIGHT - 30) {
+          loseLife();
+          enemies.splice(i, 1);
+          break;
+        }
+        
+        // Collide with player
+        if (
+          player.x - player.width / 2 < enemy.x + enemy.width &&
+          player.x + player.width / 2 > enemy.x &&
+          player.y - player.height / 2 < enemy.y + enemy.height &&
+          player.y + player.height / 2 > enemy.y
+        ) {
+          loseLife();
+          createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 12, '#f80');
+          enemies.splice(i, 1);
+          break;
+        }
+      }
+      
+      // Collision: enemy bullets vs player
+      const pHalfW = player.width / 2;
+      const pHalfH = player.height / 2;
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        const eb = enemyBullets[i];
+        if (
+          player.x - pHalfW < eb.x + eb.width / 2 &&
+          player.x + pHalfW > eb.x - eb.width / 2 &&
+          player.y - pHalfH < eb.y + eb.height &&
+          player.y + pHalfH > eb.y
+        ) {
+          // Enemy hit us - make THAT shooter happy!
+          if (eb.shooterId != null) {
+            makeEnemyHappy(eb.shooterId);
+          }
+          enemyBullets.splice(i, 1);
+          createParticles(player.x, player.y - 5, 11, '#f44');
+          loseLife();
+          break;
+        }
+      }
+      
+      // Win condition: all enemies dead → next wave
+      if (enemies.length === 0) {
+        wave++;
+        
+        // Stronger difficulty ramp each wave
+        enemySpeed = Math.min(5.2, 1.9 + (wave - 1) * 0.45);
+        enemyDropAmount = Math.min(34, 20 + Math.floor(wave * 1.6));
+        currentMoveInterval = Math.max(180, 340 - (wave - 1) * 28);
+        
+        // Clear old enemy bullets between waves (clean slate)
+        enemyBullets = [];
+        lastEnemyShot = Date.now() + 900; // brief breathing room after wave clear
+        lastEnemyMove = Date.now();
+        
+        createWaveEnemies();
+        
+        // Bonus for clearing wave
+        score += 250 * wave;
+        updateHUD();
+        playSound('wave');
+      }
+      
+      // Check game over
+      if (lives <= 0) {
+        endGame();
+      }
+    }
+    
+    function shoot() {
+      bullets.push({
+        x: player.x,
+        y: player.y - player.height / 2 - 2,
+        width: 4,
+        height: 12,
+        speed: 9
+      });
+      
+      playSound('shoot');
+    }
+    
+    function enemyShoot() {
+      if (enemies.length === 0) return;
+      
+      const now = Date.now();
+      // Prevent rapid double fires from both tick + timer
+      if (now - lastEnemyShot < 280) return;
+      
+      // Prefer shooting from enemies that are lower on screen (more threatening)
+      const sorted = [...enemies].sort((a, b) => b.y - a.y);
+      const shooter = sorted[Math.floor(Math.random() * Math.min(4, sorted.length))];
+      
+      enemyBullets.push({
+        x: shooter.x + shooter.width / 2,
+        y: shooter.y + shooter.height + 1,
+        width: 4,
+        height: 11,
+        speed: 3.8 + Math.min(2.2, wave * 0.28),
+        shooterId: shooter.id
+      });
+      
+      lastEnemyShot = now;
+      playSound('enemyShoot');
+    }
+    
+    // Emotion helpers
+    function makePlayerHappy() {
+      playerEmotion = 'happy';
+      playerEmotionTime = 30;
+    }
+    
+    function makeEnemyHappy(id) {
+      const enemy = enemies.find(e => e.id === id);
+      if (enemy) {
+        enemy.emotion = 'happy';
+        enemy.emotionTime = 50;
+      }
+    }
+    
+    function makeEnemySad(id) {
+      const enemy = enemies.find(e => e.id === id);
+      if (enemy) {
+        enemy.emotion = 'sad';
+        enemy.emotionTime = 40;
+      }
+    }
+    
+    function loseLife() {
+      lives--;
+      updateHUD();
+      playSound('hurt');
+      
+      // Small screen shake via particles
+      createParticles(player.x, player.y, 7, '#f88');
+      
+      // Push enemies back a little on hit
+      for (const e of enemies) {
+        e.y -= 8;
+      }
+      
+      if (lives <= 0) {
+        // Will be handled in update
+      } else {
+        // Brief invulnerability / respawn position
+        player.x = WIDTH / 2;
+      }
+    }
+    
+    function endGame() {
+      gameState = 'gameover';
+      
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('shooterHighScore', highScore);
+      }
+      
+      document.getElementById('final-score').textContent = String(score).padStart(5, '0');
+      document.getElementById('final-high-score').textContent = String(highScore).padStart(5, '0');
+      document.getElementById('game-over-screen').classList.add('visible');
+      document.getElementById('start-screen').classList.remove('visible');
+      
+      updateHUD();
+      playSound('gameover');
+      stopMusic();
+      
+      // All remaining enemies celebrate victory!
+      for (const e of enemies) {
+        e.emotion = 'celebrate';
+        e.emotionTime = 300;
+      }
+    }
+    
+    function startGame() {
+      if (gameState === 'playing') return;
+      
+      resetGame();
+      gameState = 'playing';
+      
+      document.getElementById('start-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
+      
+      updateHUD();
+      playSound('start');
+      startMusic();
+    }
+    
+    function restartGame() {
+      resetGame();
+      gameState = 'playing';
+      
+      document.getElementById('start-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
+      
+      updateHUD();
+      startMusic();
+    }
+    
+    // Simple sound using Web Audio API
+    let audioCtx;
+    
+    function playSound(type) {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filter = audioCtx.createBiquadFilter();
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        const now = audioCtx.currentTime;
+        
+        if (type === 'shoot') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(680, now);
+          gain.gain.value = 0.065;
+          filter.type = 'lowpass';
+          filter.frequency.value = 1600;
+          osc.frequency.linearRampToValueAtTime(320, now + 0.12);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.13);
+          osc.start(now);
+          osc.stop(now + 0.2);
+        } 
+        else if (type === 'hit') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(240, now);
+          gain.gain.value = 0.12;
+          filter.type = 'lowpass';
+          filter.frequency.value = 900;
+          osc.frequency.exponentialRampToValueAtTime(80, now + 0.18);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.22);
+          osc.start(now);
+          osc.stop(now + 0.3);
+        } 
+        else if (type === 'hurt') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(180, now);
+          gain.gain.value = 0.3;
+          filter.type = 'lowshelf';
+          osc.frequency.linearRampToValueAtTime(60, now + 0.35);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.4);
+          osc.start(now);
+          osc.stop(now + 0.45);
+        } 
+        else if (type === 'wave') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(520, now);
+          gain.gain.value = 0.2;
+          osc.frequency.linearRampToValueAtTime(920, now + 0.08);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.4);
+          osc.start(now);
+          osc.stop(now + 0.5);
+        } 
+        else if (type === 'start') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, now);
+          gain.gain.value = 0.25;
+          osc.frequency.linearRampToValueAtTime(660, now + 0.1);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.25);
+          osc.start(now);
+          osc.stop(now + 0.3);
+        } 
+        else if (type === 'gameover') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(220, now);
+          gain.gain.value = 0.25;
+          osc.frequency.linearRampToValueAtTime(80, now + 0.6);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.8);
+          osc.start(now);
+          osc.stop(now + 1);
+        } 
+        else if (type === 'enemyShoot') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(170, now);
+          gain.gain.value = 0.055;
+          filter.type = 'highpass';
+          filter.frequency.value = 120;
+          osc.frequency.linearRampToValueAtTime(95, now + 0.1);
+          gain.gain.linearRampToValueAtTime(0.001, now + 0.18);
+          osc.start(now);
+          osc.stop(now + 0.22);
+        }
+      } catch (e) {
+        // Audio not available, ignore
+      }
+    }
+    
+    // ===== Nostalgic 8-bit background music (Web Audio, no files) =====
+    const melodyNotes = [
+      659, 0, 783, 0,     // E5  G5
+      880, 783, 659, 0,   // A5  G5  E5
+      523, 0, 659, 0,     // C5  E5
+      783, 659, 523, 392  // G5  E5  C5  G4
+    ];
+    
+    const bassNotes = [
+      130.81, 0, 196, 0,   // C3      G3
+      261.63, 0, 196, 0,   // C4      G3
+      130.81, 0, 174.61, 0,// C3      F3
+      196,    0, 130.81, 0 // G3      C3
+    ];
+    
+    function playMusicNote(freq, duration, type = 'square', vol = 0.08) {
+      if (!audioCtx) return;
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const filt = audioCtx.createBiquadFilter();
+        
+        osc.type = type;
+        osc.frequency.value = freq;
+        gain.gain.value = vol;
+        
+        if (type === 'square') {
+          filt.type = 'lowpass';
+          filt.frequency.value = 1200;
+        } else {
+          filt.type = 'lowpass';
+          filt.frequency.value = 800;
+        }
+        
+        osc.connect(filt);
+        filt.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        const t = audioCtx.currentTime;
+        osc.start(t);
+        gain.gain.linearRampToValueAtTime(0.0001, t + duration);
+        osc.stop(t + duration + 0.03);
+      } catch (e) {}
+    }
+    
+    function scheduleMusic() {
+      if (!musicOn || gameState !== 'playing' || !audioCtx) {
+        return;
+      }
+      
+      const step = musicBeat % melodyNotes.length;
+      const lead = melodyNotes[step];
+      const bass = bassNotes[step];
+      
+      // Lead melody (chiptune square)
+      if (lead > 0) {
+        playMusicNote(lead, 0.11, 'square', 0.095);
+      }
+      
+      // Bass (triangle for warm 8-bit feel)
+      if (bass > 0) {
+        playMusicNote(bass, 0.22, 'triangle', 0.145);
+      }
+      
+      // Classic "thump" on the beat (every 4 steps) — very nostalgic
+      if (step % 4 === 0) {
+        playMusicNote(82, 0.055, 'square', 0.07);
+      }
+      
+      musicBeat++;
+      
+      // Speed up the music with each wave — perfect retro invaders feel!
+      const tempo = Math.max(82, MUSIC_BASE_TEMPO - (wave - 1) * 10);
+      musicTimer = setTimeout(scheduleMusic, tempo);
+    }
+    
+    function startMusic() {
+      stopMusic();
+      if (!musicOn) return;
+      
+      if (!audioCtx) {
+        try {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (e) { return; }
+      }
+      
+      // Resume if suspended (browser policy)
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+      
+      musicBeat = 0;
+      scheduleMusic();
+    }
+    
+    function stopMusic() {
+      if (musicTimer) {
+        clearTimeout(musicTimer);
+        musicTimer = null;
+      }
+    }
+    
+    function toggleMusic() {
+      musicOn = !musicOn;
+      const btn = document.getElementById('music-btn');
+      
+      if (musicOn) {
+        btn.textContent = '♪ ON';
+        if (gameState === 'playing') {
+          startMusic();
+        }
+      } else {
+        btn.textContent = '♪ OFF';
+        stopMusic();
+      }
+    }
+    
+    // Keyboard support for M key
+    window.addEventListener('keydown', (e) => {
+      if ((e.key === 'm' || e.key === 'M') && (gameState === 'playing' || gameState === 'start')) {
+        toggleMusic();
+        e.preventDefault();
+      }
+    });
+    
+    function draw() {
+      // Background
+      ctx.fillStyle = '#05070a';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      
+      // Stars
+      ctx.fillStyle = '#fff';
+      for (const star of stars) {
+        ctx.globalAlpha = star.brightness;
+        ctx.fillRect(star.x, star.y, star.size, star.size);
+      }
+      ctx.globalAlpha = 1;
+      
+      // Draw player (ship) - now with happy face when killing enemies!
+      const px = player.x;
+      const py = player.y;
+      
+      // Ship body (green hull)
+      ctx.fillStyle = '#0f8';
+      ctx.fillRect(px - 18, py - 6, 36, 14);
+      
+      // Cockpit / face area
+      ctx.fillStyle = playerEmotion === 'happy' ? '#9ff' : '#aff';
+      ctx.fillRect(px - 7, py - 3, 14, 8);
+      
+      // Nose / cannon (cyan)
+      ctx.fillStyle = '#0ff';
+      ctx.beginPath();
+      ctx.moveTo(px, py - 18);
+      ctx.lineTo(px - 7, py - 2);
+      ctx.lineTo(px + 7, py - 2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // === Expressive face on cockpit ===
+      const faceY = py - 2;
+      
+      // Eyes
+      ctx.fillStyle = '#112';
+      if (playerEmotion === 'happy') {
+        // Happy squinty / ^ eyes
+        ctx.fillRect(px - 5, faceY - 1, 3, 2);
+        ctx.fillRect(px + 3, faceY - 1, 3, 2);
+        // Eyebrows raised for happy
+        ctx.fillStyle = '#000';
+        ctx.fillRect(px - 6, faceY - 3, 4, 1);
+        ctx.fillRect(px + 2, faceY - 3, 4, 1);
+      } else {
+        // Normal round eyes
+        ctx.fillRect(px - 5, faceY, 3, 3);
+        ctx.fillRect(px + 3, faceY, 3, 3);
+      }
+      
+      // Mouth - changes with emotion
+      ctx.fillStyle = '#112';
+      if (playerEmotion === 'happy') {
+        // Big happy smile
+        ctx.fillRect(px - 4, faceY + 2, 8, 2);
+        // Teeth highlight
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(px - 2, faceY + 2, 4, 1);
+      } else {
+        // Neutral mouth
+        ctx.fillRect(px - 2, faceY + 3, 4, 1);
+      }
+      
+      // Happy blush when celebrating a kill
+      if (playerEmotion === 'happy') {
+        ctx.fillStyle = '#f77';
+        ctx.fillRect(px - 8, faceY + 1, 2, 2);
+        ctx.fillRect(px + 7, faceY + 1, 2, 2);
+      }
+      
+      // Thrusters
+      ctx.fillStyle = '#f80';
+      ctx.fillRect(px - 14, py + 8, 6, 4);
+      ctx.fillRect(px + 8, py + 8, 6, 4);
+      
+      if (gameState === 'playing') {
+        // Thruster glow when moving
+        if (keys['ArrowLeft'] || keys['ArrowRight'] || keys['a'] || keys['d']) {
+          ctx.fillStyle = '#fa0';
+          ctx.fillRect(px - 13, py + 11, 4, 6);
+          ctx.fillRect(px + 9, py + 11, 4, 6);
+        }
+      }
+      
+      // Bullets
+      ctx.fillStyle = '#ff0';
+      for (const b of bullets) {
+        ctx.fillRect(b.x - b.width / 2, b.y, b.width, b.height);
+        // small glow
+        ctx.fillStyle = '#ff8';
+        ctx.fillRect(b.x - 1, b.y + 2, 2, 4);
+        ctx.fillStyle = '#ff0';
+      }
+      
+      // Enemy bullets (red/pink projectiles coming down)
+      ctx.fillStyle = '#f55';
+      for (const eb of enemyBullets) {
+        ctx.fillRect(eb.x - eb.width / 2, eb.y, eb.width, eb.height);
+        ctx.fillStyle = '#faa';
+        ctx.fillRect(eb.x - 1, eb.y + 3, 2, 4);
+        ctx.fillStyle = '#f55';
+      }
+      
+      // Enemies - now with expressive happy/sad/celebrate faces!
+      for (const enemy of enemies) {
+        const ex = enemy.x;
+        const ey = enemy.y;
+        const w = enemy.width;
+        const h = enemy.height;
+        const emotion = enemy.emotion || 'neutral';
+        
+        // Body (different colors per type)
+        if (enemy.type === 0) {
+          ctx.fillStyle = '#f44';
+          ctx.fillRect(ex, ey, w, h);
+        } else if (enemy.type === 1) {
+          ctx.fillStyle = '#fa4';
+          ctx.fillRect(ex, ey, w, h);
+        } else {
+          ctx.fillStyle = '#4cf';
+          ctx.fillRect(ex, ey, w, h);
+        }
+        
+        // === Face area (center of body) ===
+        const faceCenterX = ex + w / 2;
+        const faceY = ey + 7;
+        
+        // Eyes - change with emotion
+        ctx.fillStyle = '#111';
+        let eyeOffsetY = 0;
+        let eyeHeight = 4;
+        
+        if (emotion === 'happy' || emotion === 'celebrate') {
+          eyeOffsetY = -1;   // eyes higher for happy
+          eyeHeight = 3;
+          // Happy curved / squinty eyes
+          ctx.fillRect(ex + 6, faceY + eyeOffsetY, 5, eyeHeight);
+          ctx.fillRect(ex + w - 11, faceY + eyeOffsetY, 5, eyeHeight);
+          // Extra sparkle dots for happy
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(ex + 7, faceY + eyeOffsetY, 1, 1);
+          ctx.fillRect(ex + w - 9, faceY + eyeOffsetY, 1, 1);
+          ctx.fillStyle = '#111';
+        } else if (emotion === 'sad') {
+          eyeOffsetY = 1;   // droopy eyes
+          eyeHeight = 3;
+          ctx.fillRect(ex + 6, faceY + eyeOffsetY, 5, eyeHeight);
+          ctx.fillRect(ex + w - 11, faceY + eyeOffsetY, 5, eyeHeight);
+        } else {
+          // Neutral
+          ctx.fillRect(ex + 6, faceY, 5, eyeHeight);
+          ctx.fillRect(ex + w - 11, faceY, 5, eyeHeight);
+        }
+        
+        // Mouth - the key expressive part
+        ctx.fillStyle = '#111';
+        if (emotion === 'happy') {
+          // Big happy smile
+          ctx.fillRect(ex + 8, ey + 15, 6, 2);
+          ctx.fillRect(ex + 7, ey + 16, 8, 1); // wider bottom
+        } else if (emotion === 'sad') {
+          // Sad frown (two angled pieces)
+          ctx.fillRect(ex + 8, ey + 17, 4, 1);
+          ctx.fillRect(ex + 13, ey + 16, 4, 1);
+        } else if (emotion === 'celebrate') {
+          // Celebrate: huge grin + excited!
+          ctx.fillRect(ex + 6, ey + 14, 20, 3);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(ex + 9, ey + 15, 3, 1); // teeth
+          ctx.fillRect(ex + 14, ey + 15, 3, 1);
+          ctx.fillStyle = '#111';
+          // Little party arms / confetti bits
+          ctx.fillStyle = '#ff0';
+          ctx.fillRect(ex + 2, ey + 8, 3, 2);
+          ctx.fillRect(ex + w - 5, ey + 8, 3, 2);
+          ctx.fillStyle = '#111';
+        } else {
+          // Neutral mouth
+          ctx.fillRect(ex + 9, ey + 16, 5, 1);
+        }
+        
+        // Type-specific extra details (antennae or highlights)
+        if (enemy.type === 0) {
+          // Classic "horns" or ears
+          ctx.fillStyle = '#c33';
+          ctx.fillRect(ex + 4, ey - 1, 4, 3);
+          ctx.fillRect(ex + w - 8, ey - 1, 4, 3);
+        } else if (enemy.type === 1) {
+          // Tougher look
+          ctx.fillStyle = '#c70';
+          ctx.fillRect(ex + 3, ey + 2, 3, 4);
+          ctx.fillRect(ex + w - 6, ey + 2, 3, 4);
+        } else {
+          // Fast type little wings
+          ctx.fillStyle = '#08c';
+          ctx.fillRect(ex - 2, ey + 8, 4, 3);
+          ctx.fillRect(ex + w - 2, ey + 8, 4, 3);
+        }
+      }
+      
+      // Particles (explosions)
+      for (const p of particles) {
+        const alpha = Math.max(0.1, p.life / 30);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      }
+      ctx.globalAlpha = 1;
+      
+      // HUD elements on canvas (wave)
+      ctx.fillStyle = '#555';
+      ctx.font = '12px "Press Start 2P", monospace';
+      ctx.fillText('WAVE ' + wave, WIDTH - 110, 30);
+      
+      if (gameState === 'playing' && enemies.length < 8) {
+        // Danger indicator
+        ctx.fillStyle = '#f33';
+        ctx.fillText('!!!', 30, 30);
+      }
+      
+      // Game over or start overlays are handled by DOM
+    }
+    
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+    
+    // Input handling
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      
+      if (gameState === 'start' && (e.key === ' ' || e.key === 'Space')) {
+        startGame();
+      }
+      
+      if (gameState === 'gameover' && (e.key.toLowerCase() === 'r')) {
+        restartGame();
+      }
+      
+      // Prevent space from scrolling
+      if (e.key === ' ') {
+        e.preventDefault();
+      }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+    
+    // Mouse support for shooting + clicking start
+    canvas.addEventListener('click', (e) => {
+      if (gameState === 'start') {
+        startGame();
+      } else if (gameState === 'playing') {
+        const now = Date.now();
+        if (now - lastShotTime > SHOOT_COOLDOWN) {
+          shoot();
+          lastShotTime = now;
+        }
+      } else if (gameState === 'gameover') {
+        restartGame();
+      }
+    });
+    
+    // Allow clicking the canvas to focus for keyboard
+    canvas.addEventListener('mousedown', () => {
+      canvas.focus();
+    });
+    
+    // Keyboard restart from anywhere
+    window.addEventListener('keypress', (e) => {
+      if (e.key.toLowerCase() === 'r' && gameState === 'gameover') {
+        restartGame();
+      }
+    });
+    
+    // Initialize everything
+    function init() {
+      initStars();
+      
+      // Initial enemies for menu preview (decorative)
+      wave = 1;
+      createWaveEnemies();
+      
+      // Set initial high score displays
+      document.getElementById('high-score').textContent = String(highScore).padStart(5, '0');
+      document.getElementById('menu-high-score').textContent = String(highScore).padStart(5, '0');
+      
+      // Set initial music button state
+      const musicBtn = document.getElementById('music-btn');
+      if (musicBtn) musicBtn.textContent = musicOn ? '♪ ON' : '♪ OFF';
+      
+      // Draw one frame of the menu state
+      draw();
+      
+      // Start the main loop
+      gameLoop();
+      
+      // Show high score in console for fun
+      console.log('%c[RETRO INVADERS] High score:', 'color:#666', highScore);
+      
+      // Small hint
+      console.log('%cClick the canvas or press SPACE to start. Press M to toggle music.', 'color:#444');
+    }
+    
+    // Boot
+    init();
+  </script>
+</body>
+</html>
