@@ -163,6 +163,8 @@
       
       <button onclick="restartGame()" style="margin-top: 8px;">PLAY AGAIN (R)</button>
       <button onclick="goToHome()" style="margin-top: 8px; background: #555;">HOME</button>
+      <button onclick="showLeaderboard()" style="margin-top: 8px; background: #555;">LEADERBOARD</button>
+      <button onclick="shareScore()" style="margin-top: 8px; background: #555;">SHARE SCORE</button>
     </div>
 
     <!-- Settings Screen -->
@@ -1195,33 +1197,11 @@
         goScreen.insertBefore(statsDiv, goScreen.querySelector('button'));
       }
 
-      // Add share button if not present
-      let shareBtn = document.getElementById('share-btn');
-      if (!shareBtn) {
-        shareBtn = document.createElement('button');
-        shareBtn.id = 'share-btn';
-        shareBtn.textContent = 'SHARE SCORE';
-        shareBtn.style.marginTop = '10px';
-        const funnyLine = randomLine || "They never saw it coming.";
-        shareBtn.onclick = () => {
-          const text = `RETRO INVADERS\nScore: ${score} | Wave: ${wave} | Max Combo: x${biggestCombo}\nDestroyed: ${stats.destroyed} | Happy: ${stats.happyMade} | Sad: ${stats.sadMade}\n${funnyLine}\n\nPlay now: https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders`;
-          navigator.clipboard.writeText(text).then(() => alert('Epic score report copied!'));
-          try {
-            const dataUrl = canvas.toDataURL('image/png');
-            const link = document.createElement('a');
-            link.download = `retro-invaders-${score}.png`;
-            link.href = dataUrl;
-            link.click();
-          } catch(e) {}
-        };
-
-        // Auto focus username input
-        setTimeout(() => {
-          const unameInput = document.getElementById('username-input');
-          if (unameInput) unameInput.focus();
-        }, 100);
-        goScreen.appendChild(shareBtn);
-      }
+      // Auto focus username input
+      setTimeout(() => {
+        const unameInput = document.getElementById('username-input');
+        if (unameInput) unameInput.focus();
+      }, 100);
 
       document.getElementById('game-over-screen').classList.add('visible');
       document.getElementById('start-screen').classList.remove('visible');
@@ -1309,6 +1289,7 @@
         content.innerHTML = html;
       }
       document.getElementById('start-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
       document.getElementById('leaderboard-screen').classList.add('visible');
     }
 
@@ -1370,6 +1351,33 @@
         saved.textContent = `Saved as: ${name}`;
         input.parentNode.appendChild(saved);
       }
+    }
+
+    function shareScore() {
+      const funnyLines = [
+        "One of them looked genuinely betrayed...",
+        "They will tell stories about this day.",
+        "The survivors are probably in therapy now.",
+        "You really left an impression. A terrifying one.",
+        "Wave after wave... and still they came.",
+        "Your combo was so high, even the pixels were scared.",
+        "Congratulations, you have emotionally scarred an entire species.",
+        "At least the barriers died with dignity.",
+        "The boss probably had a family. Probably.",
+        "You are the reason aliens don't visit Earth anymore.",
+        "Biggest combo of the day. They never stood a chance.",
+        "The last one tried to surrender. You didn't notice."
+      ];
+      const randomLine = funnyLines[Math.floor(Math.random() * funnyLines.length)];
+      const text = `RETRO INVADERS\nScore: ${score} | Wave: ${wave} | Max Combo: x${biggestCombo}\nDestroyed: ${stats.destroyed} | Happy: ${stats.happyMade} | Sad: ${stats.sadMade}\n${randomLine}\n\nPlay now: https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders`;
+      navigator.clipboard.writeText(text).then(() => alert('Score report copied to clipboard!')).catch(() => alert(text));
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `retro-invaders-${score}.png`;
+        link.href = dataUrl;
+        link.click();
+      } catch(e) {}
     }
 
     function openSettings() {
