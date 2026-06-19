@@ -33,11 +33,13 @@ Destroy all the invaders before they reach the bottom or shoot you down. Survive
 
 ## Play Online
 
-This game is hosted via GitHub Pages:
+### Quickest Way (Recommended for first share)
+1. Go to [https://app.netlify.com/drop](https://app.netlify.com/drop)
+2. Drag and drop the entire `basic-shooting-game` folder (or just the `index.html`)
+3. Get an instant public URL you can share!
 
-**https://YOUR-USERNAME.github.io/retro-invaders**
-
-*(Replace with your actual GitHub username after deploying)*
+### Permanent Home - GitHub Pages (Free)
+See the section below: **"Deploy to GitHub Pages"**
 
 ## Local Play
 
@@ -60,6 +62,42 @@ basic-shooting-game/
 ├── index.html      # The complete game
 ├── README.md       # This file
 ```
+
+## Deploy to GitHub Pages (Permanent Free Hosting)
+
+1. Create a new public repository on GitHub:
+   - Go to https://github.com/new
+   - Name it `retro-invaders` (or whatever you like)
+   - Make it **Public**
+   - Do **not** initialize with README (we already have one)
+
+2. In your terminal, run these commands (replace `YOUR-USERNAME`):
+
+```bash
+cd basic-shooting-game
+
+# Add your new GitHub repo as remote
+git remote add origin https://github.com/YOUR-USERNAME/retro-invaders.git
+
+# Rename branch to main (if needed)
+git branch -M main
+
+# Push to GitHub
+git push -u origin main
+```
+
+3. Enable GitHub Pages:
+   - Go to your repo on GitHub → **Settings** → **Pages**
+   - Under "Build and deployment":
+     - Source: **Deploy from a branch**
+     - Branch: `main`
+     - Folder: `/ (root)`
+   - Click **Save**
+
+4. Wait ~1 minute. Your game will be live at:
+   ```
+   https://YOUR-USERNAME.github.io/retro-invaders
+   ```
 
 ## Credits
 
