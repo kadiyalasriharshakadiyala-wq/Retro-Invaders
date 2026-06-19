@@ -71,18 +71,13 @@ basic-shooting-game/
    - Make it **Public**
    - Do **not** initialize with README (we already have one)
 
-2. In your terminal, run these commands (replace `YOUR-USERNAME`):
+2. In your terminal, run these commands:
 
 ```bash
-cd basic-shooting-game
+cd "C:\Users\kadiy\basic-shooting-game"
 
-# Add your new GitHub repo as remote
-git remote add origin https://github.com/YOUR-USERNAME/retro-invaders.git
+git remote add origin https://github.com/kadiyalasriharshakadiyala-wq/Retro-Invaders.git
 
-# Rename branch to main (if needed)
-git branch -M main
-
-# Push to GitHub
 git push -u origin main
 ```
 
@@ -94,9 +89,9 @@ git push -u origin main
      - Folder: `/ (root)`
    - Click **Save**
 
-4. Wait ~1 minute. Your game will be live at:
+4. Wait 1-2 minutes. Your game will be live at:
    ```
-   https://YOUR-USERNAME.github.io/retro-invaders
+   https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders
    ```
 
 ## Credits
