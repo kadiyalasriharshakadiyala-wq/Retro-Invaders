@@ -1,102 +1,72 @@
 # RETRO INVADERS
 
-A nostalgic, single-file HTML5 arcade shooter built in the spirit of classic 1980s games like *Space Invaders*.
+A polished, single-file HTML5 Canvas retro arcade shooter with emotional depth, power-ups, combos, bosses, and modern gameplay polish — all in the spirit of classic 1980s games like *Space Invaders*.
 
-Play it instantly: just open `index.html` in any modern browser.
+**Play instantly:** https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders
+
+Or open `index.html` in any browser (no install needed).
 
 ## Features
 
-- **Classic gameplay** with modern twists
-- **Enemy shooting** – the invaders fight back!
-- **Emotional characters**:
-  - Your ship smiles when you destroy an enemy
-  - Enemies smile when their bullets hit you
-  - Enemies get sad when their shots miss
-  - All remaining enemies celebrate when you lose
-- **Progressive waves** – more enemies, faster movement, and tighter formations
-- **Authentic chiptune background music** that speeds up with each wave
-- **Sound effects** for shooting, hits, and more
-- **High score** persistence (saved in your browser)
-- Purely client-side – no servers, no installs
+- **Classic gameplay** with modern twists: aimed enemy shots, inertia-based movement, destructible barriers
+- **Emotional characters** (unique hook):
+  - Your ship changes expression (happy, smug, proud, panicked)
+  - Enemies have happy/sad/scared/celebrate faces that affect behavior and color
+  - Grudge system and detailed aftermath stats with funny lines
+- **6 Power-ups**: Rapid Fire, Spread Shot, Shield, Smart Bomb, Piercing, Slow-Mo (with juice and stacking)
+- **Combo System**: Chain kills for x2-x8 multipliers that scare enemies
+- **Boss Waves** every 5 waves with big expressive boss
+- **Endless Mode** with roguelike power-up rewards per wave
+- **Stars & Run History**: Persistent progression and last 5 runs recap
+- **Visual Polish**: CRT scanlines + vignette, screen shake, parallax stars, organic animated ship/enemy designs, particles with physics, score pops
+- **Audio**: Dynamic chiptune music that intensifies with danger/wave, mood-based sounds
+- **Cross-platform**: Keyboard, mouse, touch (mobile), fullscreen, pause, settings
+- Purely client-side (localStorage for saves). PWA-ready.
+
+## Controls
+- **← → / A D**: Move (with realistic inertia)
+- **Space / Click / Tap**: Shoot
+- **P**: Pause
+- **F**: Fullscreen
+- **M**: Toggle music
+- **R**: Restart
 
 ## How to Play
-
-### Controls
-- **← / →** or **A / D** — Move your ship
-- **Space** — Shoot
-- **Click** the game area — Also shoots
-- **M** — Toggle music on/off
-- **R** — Restart after game over
-
-### Objective
-Destroy all the invaders before they reach the bottom or shoot you down. Survive as many waves as possible!
+Defend the bottom of the screen. Shoot descending waves of expressive invaders. Collect power-ups, build combos, destroy barriers, and survive bosses. Emotions matter — make enemies happy, sad, or scared!
 
 ## Play Online
-
-### Quickest Way (Recommended for first share)
-1. Go to [https://app.netlify.com/drop](https://app.netlify.com/drop)
-2. Drag and drop the entire `basic-shooting-game` folder (or just the `index.html`)
-3. Get an instant public URL you can share!
-
-### Permanent Home - GitHub Pages (Free)
-See the section below: **"Deploy to GitHub Pages"**
+https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders
 
 ## Local Play
-
-1. Download or clone this repository
-2. Open `index.html` in any browser (Chrome, Edge, Firefox, etc.)
-3. Enjoy!
+Just open `index.html` in Chrome/Edge/Firefox/etc.
 
 ## Technical Details
-
-- Single self-contained `index.html` file (~35KB)
-- Built with vanilla HTML5 Canvas + JavaScript
-- Web Audio API for music and sound effects
-- No external dependencies or frameworks
-- Fully responsive controls (keyboard + mouse)
+- Single self-contained HTML file (~40KB)
+- Vanilla JS + Canvas + Web Audio
+- No frameworks or external files
+- Object pooling notes + performance considerations
+- Fully responsive + mobile touch
 
 ## Project Structure
-
 ```
 basic-shooting-game/
-├── index.html      # The complete game
-├── README.md       # This file
+├── index.html   # Complete game + all assets (drawings + audio)
+└── README.md
 ```
 
-## Deploy to GitHub Pages (Permanent Free Hosting)
-
-1. Create a new public repository on GitHub:
-   - Go to https://github.com/new
-   - Name it `retro-invaders` (or whatever you like)
-   - Make it **Public**
-   - Do **not** initialize with README (we already have one)
-
-2. In your terminal, run these commands:
-
-```bash
-cd "C:\Users\kadiy\basic-shooting-game"
-
-git remote add origin https://github.com/kadiyalasriharshakadiyala-wq/Retro-Invaders.git
-
-git push -u origin main
-```
-
-3. Enable GitHub Pages:
-   - Go to your repo on GitHub → **Settings** → **Pages**
-   - Under "Build and deployment":
-     - Source: **Deploy from a branch**
-     - Branch: `main`
-     - Folder: `/ (root)`
-   - Click **Save**
-
-4. Wait 1-2 minutes. Your game will be live at:
-   ```
-   https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders
-   ```
+## itch.io / Launch
+See the full improvement checklist in conversation history or contact for assets (thumbnails, GIFs, description).
 
 ## Credits
+Built iteratively with focus on emotional gameplay, polish, and retro fun.
 
-Built as a fun retro project. Feel free to fork, modify, or use the code!
+---
+
+**v1.0** - Fully featured with all major improvements from the checklist (balance, juice, UI, audio, technical, emotional core, etc.). 
+
+Play it, chase high scores, and enjoy the emotional rollercoaster! 
+
+(For itch.io page: Use the emotional hook in description: "Classic invaders... but they have feelings. Make them happy, sad, or scared — and watch the consequences.")
 
 ---
 

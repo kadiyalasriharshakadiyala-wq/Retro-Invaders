@@ -134,12 +134,15 @@
     <!-- Start Screen -->
     <div id="start-screen" class="overlay visible" style="pointer-events: all;">
       <div class="title">RETRO INVADERS</div>
-      <div style="margin: 12px 0; font-size: 14px; color: #0ff;">The 8-bit classic returns!</div>
+      <div style="margin: 12px 0; font-size: 14px; color: #0ff;">The 8-bit classic returns! <span style="font-size:10px; color:#888;">v1.0</span></div>
+      <div style="font-size:10px; color:#666; margin-bottom:8px;">Chain kills for multipliers! Power-ups drop from enemies.</div>
       <div style="margin-bottom: 16px; font-size: 13px; color: #ff0;">HIGH SCORE: <span id="menu-high-score">00000</span></div>
       <button onclick="startGame()">PRESS SPACE OR CLICK TO START</button>
       <button onclick="startEndlessMode()" style="margin-top: 8px; background: #f80; color: #000;">ENDLESS MODE (Roguelike)</button>
       <button onclick="openSettings()" style="margin-top: 8px; background: #555;">SETTINGS</button>
+      <button onclick="openHowTo()" style="margin-top: 8px; background: #555;">HOW TO PLAY</button>
       <button onclick="showRunHistory()" style="margin-top: 8px; background: #555; font-size:10px;">RUN HISTORY</button>
+      <button onclick="startDailyChallenge()" style="margin-top: 8px; background: #55f; font-size:10px;">DAILY CHALLENGE</button>
       <div style="margin-top: 30px; font-size: 11px; color: #666;">
         ← → MOVE &nbsp;&nbsp;&nbsp; SPACE SHOOT
       </div>
@@ -173,6 +176,26 @@
       </div>
       <button onclick="closeSettings()">BACK</button>
     </div>
+
+    <!-- How to Play Screen -->
+    <div id="howto-screen" class="overlay">
+      <div style="font-size: 24px; margin-bottom: 20px;">HOW TO PLAY</div>
+      <div style="text-align: left; font-size: 13px; line-height: 1.6; max-width: 500px;">
+        <b>Controls:</b><br>
+        ← → / A D : Move<br>
+        SPACE or Click : Shoot<br>
+        P : Pause | F : Fullscreen | M : Music<br><br>
+        <b>Power-ups drop from enemies!</b><br>
+        Collect glowing orbs for temporary boosts:<br>
+        • Rapid Fire • Spread Shot • Shield<br>
+        • Smart Bomb (clears screen) • Piercing • Slow-Mo<br><br>
+        <b>Combos:</b> Chain kills quickly for x2-x8 multipliers!<br>
+        High combos scare enemies.<br><br>
+        <b>Survive waves, dodge shots, destroy barriers, and beat bosses!</b><br>
+        Emotions affect enemies - make them happy/sad/scared.
+      </div>
+      <button onclick="closeHowTo()" style="margin-top: 20px;">GOT IT</button>
+    </div>
   </div>
   
   <div class="info">
@@ -190,7 +213,10 @@
     let gameState = 'start'; // 'start', 'playing', 'gameover'
     let score = 0;
     let lives = 3;
-    let highScore = parseInt(localStorage.getItem('shooterHighScore')) || 0;
+    let highScore = 0;
+    try {
+      highScore = parseInt(localStorage.getItem('shooterHighScore')) || 0;
+    } catch(e) {}
     
     // Player
     const player = {
@@ -216,6 +242,10 @@
     let barriers = []; // destructible bases
     let scorePops = []; // for satisfying score feedback
     let boss = null; // for boss waves
+    let powerupFlash = 0; // for juicy pickup effect
+    let comboFlash = 0; // for high combo visual cue
+    let firstPowerupHint = true; // for first-time onboarding
+    let firstComboHint = true;
     
     // Input
     const keys = {};
@@ -288,22 +318,33 @@
     let grudgeHits = 0;
 
     // Meta progression
-    let earnedStars = parseInt(localStorage.getItem('retroInvadersStars')) || 0;
+    let earnedStars = 0;
+    try {
+      earnedStars = parseInt(localStorage.getItem('retroInvadersStars')) || 0;
+    } catch(e) {}
 
     // Run history
-    let runHistory = JSON.parse(localStorage.getItem('retroInvadersHistory') || '[]');
+    let runHistory = [];
+    let achievements = [];
+    try {
+      runHistory = JSON.parse(localStorage.getItem('retroInvadersHistory') || '[]');
+      achievements = JSON.parse(localStorage.getItem('retroInvadersAchievements') || '[]');
+    } catch(e) {}
 
     function activatePowerup(type) {
+      // Extend duration if already active (practical power-up stacking)
+      const extend = (current, add) => (current > 0 ? current + add : add);
+      
       if (type === 'rapid') {
-        activePowerups.rapid = 400;
+        activePowerups.rapid = extend(activePowerups.rapid, 400);
         playerEmotion = 'smug';
         playerEmotionTime = 40;
       } else if (type === 'spread') {
-        activePowerups.spread = 300;
+        activePowerups.spread = extend(activePowerups.spread, 300);
         playerEmotion = 'smug';
         playerEmotionTime = 40;
       } else if (type === 'shield') {
-        activePowerups.shield = 200;
+        activePowerups.shield = extend(activePowerups.shield, 200);
         playerEmotion = 'proud';
         playerEmotionTime = 30;
       } else if (type === 'smartbomb') {
@@ -320,11 +361,11 @@
         playerEmotion = 'proud';
         playerEmotionTime = 50;
       } else if (type === 'piercing') {
-        activePowerups.piercing = 250;
+        activePowerups.piercing = extend(activePowerups.piercing, 250);
         playerEmotion = 'smug';
         playerEmotionTime = 30;
       } else if (type === 'slowmo') {
-        activePowerups.slowmo = 180;
+        activePowerups.slowmo = extend(activePowerups.slowmo, 180);
         playerEmotion = 'proud';
         playerEmotionTime = 30;
       }
@@ -376,6 +417,8 @@
       grudgeEnemyType = -1;
       grudgeHits = 0;
       scorePops = [];
+      firstPowerupHint = true;
+      firstComboHint = true;
 
       // Init destructible barriers
       barriers = [];
@@ -398,12 +441,19 @@
     function createWaveEnemies() {
       enemies = [];
       // Scale enemies with wave: more rows + columns for higher difficulty
-      const rows = Math.min(5, 3 + Math.floor((wave - 1) / 2));
-      const cols = Math.min(10, 7 + Math.floor(wave / 2));
-      const spacingX = Math.max(56, 74 - wave * 2);
+      // Balanced for normal mode: slower ramp in early waves
+      let effectiveWave = wave;
+      if (!endlessMode && wave <= 5) {
+        effectiveWave = Math.floor(wave / 1.5); // gentler early game
+      } else if (endlessMode) {
+        effectiveWave = Math.max(1, wave - 2); // slower ramp in endless
+      }
+      const rows = Math.min(5, 3 + Math.floor((effectiveWave - 1) / 2));
+      const cols = Math.min(10, 7 + Math.floor(effectiveWave / 2));
+      const spacingX = Math.max(56, 74 - effectiveWave * 2);
       const spacingY = 46;
-      const startX = Math.max(50, 95 - wave * 3);
-      const startY = 55 + Math.min(25, wave * 3);
+      const startX = Math.max(50, 95 - effectiveWave * 3);
+      const startY = 55 + Math.min(25, effectiveWave * 3);
       
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -430,6 +480,8 @@
     
     function createParticles(x, y, count, color = '#ff0', type = 'normal') {
       triggerShake(3);
+      // Simple cap for performance (object pooling would be ideal for more)
+      if (particles.length > 80) particles.splice(0, particles.length - 60);
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 3.5 + 1.5;
@@ -552,7 +604,12 @@
         
         for (const enemy of enemies) {
           let speedMod = activePowerups.slowmo > 0 ? 0.4 : 1;
-          enemy.x += enemyDirection * enemySpeed * speedMod;
+          let xMove = enemyDirection * enemySpeed * speedMod;
+          // Extra behavior for variety (scout/dodger type)
+          if (enemy.type === 4 && Math.random() < 0.02) {
+            xMove *= -0.5; // occasional dodge
+          }
+          enemy.x += xMove;
           
           // Check edges
           if (enemy.x < 25 || enemy.x + enemy.width > WIDTH - 25) {
@@ -639,9 +696,13 @@
         if (Math.abs(p.x - player.x) < 25 && Math.abs(p.y - player.y) < 25) {
           activatePowerup(p.type);
           powerups.splice(i, 1);
-          playSound('powerup');
-          triggerShake(2);
+          // Different sound per power-up type
+          const puSound = (p.type === 'smartbomb') ? 'wave' : 'powerup';
+          playSound(puSound);
+          triggerShake(4);
+          powerupFlash = 12;
           createParticles(player.x, player.y - 10, 8, '#fff', 'normal');
+          firstPowerupHint = false;
         }
       }
 
@@ -660,6 +721,8 @@
       for (let key in activePowerups) {
         if (activePowerups[key] > 0) activePowerups[key]--;
       }
+      if (powerupFlash > 0) powerupFlash--;
+      if (comboFlash > 0) comboFlash--;
 
       // Slow-mo effect
       if (activePowerups.slowmo > 0) {
@@ -703,7 +766,9 @@
             score += points;
             combo++;
             comboTimer = 120; // frames to chain
+            const oldMult = multiplier;
             multiplier = Math.min(8, 1 + Math.floor(combo / 4));
+            if (multiplier > oldMult) comboFlash = 10;
             biggestCombo = Math.max(biggestCombo, multiplier);
             stats.destroyed++;
             updateHUD();
@@ -753,7 +818,7 @@
             makePlayerHappy();
             
             // Chance to drop power-up (juicy!)
-            if (Math.random() < 0.18) {
+            if (Math.random() < 0.16) {
               const types = ['rapid', 'spread', 'shield', 'smartbomb', 'piercing', 'slowmo'];
               const type = types[Math.floor(Math.random() * types.length)];
               powerups.push({
@@ -858,6 +923,8 @@
           };
           score += 500;
           playSound('wave');
+          // Boss entrance sound (dramatic low tone)
+          playSound('hurt'); // reuse for now, low and ominous
         } else {
           createWaveEnemies();
           // Bonus for clearing wave
@@ -1026,6 +1093,27 @@
       earnedStars += starsThisRun;
       localStorage.setItem('retroInvadersStars', earnedStars);
 
+      // Check achievements
+      let newAch = [];
+      if (stats.happyMade >= 5 && !achievements.includes('heartbreaker')) {
+        newAch.push('heartbreaker');
+        achievements.push('heartbreaker');
+      }
+      if (biggestCombo >= 6 && !achievements.includes('combo_god')) {
+        newAch.push('combo_god');
+        achievements.push('combo_god');
+      }
+      if (boss && !achievements.includes('boss_slayer')) { // if beat a boss
+        // simplistic, assume if reached high wave
+      }
+      if (stats.destroyed >= 50 && !achievements.includes('no_mercy')) {
+        newAch.push('no_mercy');
+        achievements.push('no_mercy');
+      }
+      if (newAch.length > 0) {
+        localStorage.setItem('retroInvadersAchievements', JSON.stringify(achievements));
+      }
+
       // Save run history (last 5)
       runHistory.unshift({score, wave, biggestCombo, stars: starsThisRun, date: new Date().toLocaleDateString()});
       runHistory = runHistory.slice(0, 5);
@@ -1043,15 +1131,36 @@
       statsDiv.style.lineHeight = '1.4';
       let grudgeText = '';
       if (grudgeHits >= 3) {
-        grudgeText = `<br>A ${['red','orange','cyan','bomber','diver'][grudgeEnemyType] || 'certain'} enemy held a grudge against you.`;
+        const types = ['red','orange','cyan','bomber','diver'];
+        grudgeText = `<br>A ${types[grudgeEnemyType] || 'certain'} enemy held a grudge against you.`;
       }
+      
+      const funnyLines = [
+        "One of them looked genuinely betrayed...",
+        "They will tell stories about this day.",
+        "The survivors are probably in therapy now.",
+        "You really left an impression. A terrifying one.",
+        "Wave after wave... and still they came.",
+        "Your combo was so high, even the pixels were scared.",
+        "Congratulations, you have emotionally scarred an entire species.",
+        "At least the barriers died with dignity.",
+        "The boss probably had a family. Probably.",
+        "You are the reason aliens don't visit Earth anymore.",
+        "Biggest combo of the day. They never stood a chance.",
+        "The last one tried to surrender. You didn't notice."
+      ];
+      const randomLine = funnyLines[Math.floor(Math.random() * funnyLines.length)];
+      
       statsDiv.innerHTML = `
-        You destroyed <span style="color:#ff0">${stats.destroyed}</span> invaders today.<br>
-        Happy: <span style="color:#f44">${stats.happyMade}</span> | Sad: <span style="color:#88f">${stats.sadMade}</span> | Scared: <span style="color:#f8f">${stats.scaredMade}</span><br>
-        Biggest combo: <span style="color:#ff0">${biggestCombo}x</span> — they were terrified.<br>
-        <span style="color:#aaa; font-size:11px;">One of them looked genuinely betrayed...</span>
-        ${grudgeText}
-        <br><span style="color:#ff0">+${Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed} Stars earned! Total: ${earnedStars}</span>
+        <div style="margin-top:10px; font-size:13px; color:#eee; line-height:1.5;">
+          You destroyed <span style="color:#ff0">${stats.destroyed}</span> invaders today.<br>
+          Happy: <span style="color:#f44">${stats.happyMade}</span> | Sad: <span style="color:#88f">${stats.sadMade}</span> | Scared: <span style="color:#f8f">${stats.scaredMade}</span><br>
+          Biggest combo: <span style="color:#ff0">${biggestCombo}x</span> — they were terrified.<br>
+          <span style="color:#aaa; font-size:11px;">${randomLine}</span>
+          ${grudgeText}
+          <br><span style="color:#ff0">+${Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed} Stars earned! Total: ${earnedStars}</span>
+          ${newAch && newAch.length ? `<br><span style="color:#0f0">Unlocked: ${newAch.join(', ')}</span>` : ''}
+        </div>
       `;
       const goScreen = document.getElementById('game-over-screen');
       if (!document.getElementById('game-over-stats')) {
@@ -1065,14 +1174,14 @@
         shareBtn.id = 'share-btn';
         shareBtn.textContent = 'SHARE SCORE';
         shareBtn.style.marginTop = '10px';
+        const funnyLine = randomLine || "They never saw it coming.";
         shareBtn.onclick = () => {
-          const text = `RETRO INVADERS: ${score} pts, wave ${wave}, combo x${biggestCombo}! ${stats.destroyed} invaders destroyed. Play: https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders`;
-          navigator.clipboard.writeText(text).then(() => alert('Score copied to clipboard!'));
-          // Optional screenshot
+          const text = `RETRO INVADERS\nScore: ${score} | Wave: ${wave} | Max Combo: x${biggestCombo}\nDestroyed: ${stats.destroyed} | Happy: ${stats.happyMade} | Sad: ${stats.sadMade}\n${funnyLine}\n\nPlay now: https://kadiyalasriharshakadiyala-wq.github.io/Retro-Invaders`;
+          navigator.clipboard.writeText(text).then(() => alert('Epic score report copied!'));
           try {
             const dataUrl = canvas.toDataURL('image/png');
             const link = document.createElement('a');
-            link.download = 'retro-invaders-score.png';
+            link.download = `retro-invaders-${score}.png`;
             link.href = dataUrl;
             link.click();
           } catch(e) {}
@@ -1112,6 +1221,7 @@
     }
 
     let endlessMode = false;
+    let dailyMode = false;
 
     function startEndlessMode() {
       if (gameState === 'playing') return;
@@ -1134,12 +1244,39 @@
       startMusic();
     }
 
+    function startDailyChallenge() {
+      if (gameState === 'playing') return;
+      resetGame();
+      gameState = 'playing';
+      dailyMode = true;
+      lives = 2; // special daily rule
+      activePowerups.rapid = 999; // forced powerup
+      document.getElementById('start-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
+      const oldStats = document.getElementById('game-over-stats');
+      if (oldStats) oldStats.remove();
+      updateHUD();
+      playSound('start');
+      startMusic();
+    }
+
     function showRunHistory() {
-      const hist = runHistory.length ? runHistory.map(r => `${r.date}: ${r.score}pts (wave ${r.wave}, x${r.biggestCombo})`).join('\n') : 'No runs yet.';
-      alert('Last runs:\n' + hist);
+      if (!runHistory.length) {
+        alert('No runs yet. Play some games!');
+        return;
+      }
+      let text = 'YOUR LAST RUNS:\n\n';
+      runHistory.forEach((r, i) => {
+        text += `${i+1}. ${r.date} - ${r.score} pts (Wave ${r.wave}, x${r.biggestCombo}) +${r.stars}★\n`;
+      });
+      if (achievements.length) {
+        text += '\nAchievements Unlocked: ' + achievements.join(', ');
+      }
+      alert(text);
     }
 
     function openSettings() {
+      playUISound();
       document.getElementById('start-screen').classList.remove('visible');
       document.getElementById('settings-screen').classList.add('visible');
       document.getElementById('crt-toggle').checked = crtEnabled;
@@ -1147,6 +1284,7 @@
     }
 
     function closeSettings() {
+      playUISound();
       document.getElementById('settings-screen').classList.remove('visible');
       document.getElementById('start-screen').classList.add('visible');
     }
@@ -1161,6 +1299,18 @@
 
     function setDifficulty(val) {
       difficulty = parseFloat(val);
+    }
+
+    function openHowTo() {
+      playUISound();
+      document.getElementById('start-screen').classList.remove('visible');
+      document.getElementById('howto-screen').classList.add('visible');
+    }
+
+    function closeHowTo() {
+      playUISound();
+      document.getElementById('howto-screen').classList.remove('visible');
+      document.getElementById('start-screen').classList.add('visible');
     }
 
     // Override playSound volume with master
@@ -1429,6 +1579,7 @@
     
     function toggleMusic() {
       musicOn = !musicOn;
+      playUISound();
       const btn = document.getElementById('music-btn');
       
       if (musicOn) {
@@ -1440,6 +1591,22 @@
         btn.textContent = '♪ OFF';
         stopMusic();
       }
+    }
+
+    function playUISound() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.value = 880;
+        gain.gain.value = 0.1 * masterVolume;
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+        osc.start(now);
+        osc.stop(now + 0.05);
+      } catch(e) {}
     }
     
     // Keyboard support for M key
@@ -1669,16 +1836,33 @@
         }
       }
 
-      // Boss
+      // Boss - more interesting multi-part design
       if (boss) {
+        // Main body - large rounded
         ctx.fillStyle = '#c00';
-        ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+        ctx.beginPath();
+        ctx.ellipse(boss.x + boss.width/2, boss.y + boss.height/2, boss.width/2, boss.height/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Armor plates
+        ctx.fillStyle = '#900';
+        ctx.fillRect(boss.x + 10, boss.y + 8, boss.width - 20, 8);
+        ctx.fillRect(boss.x + 10, boss.y + boss.height - 16, boss.width - 20, 8);
+        
         // Big expressive face
         ctx.fillStyle = '#111';
-        ctx.fillRect(boss.x + 15, boss.y + 12, 12, 10);
-        ctx.fillRect(boss.x + boss.width - 27, boss.y + 12, 12, 10);
+        ctx.beginPath();
+        ctx.arc(boss.x + 25, boss.y + 18, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(boss.x + boss.width - 25, boss.y + 18, 6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        const mouthY = boss.y + 32;
         ctx.fillStyle = boss.emotion === 'celebrate' ? '#0f0' : '#f00';
-        ctx.fillRect(boss.x + 25, boss.y + 30, boss.width - 50, 8); // mouth
+        ctx.beginPath();
+        ctx.arc(boss.x + boss.width/2, mouthY, 10, 0, Math.PI);
+        ctx.fill();
       }
 
       // Power-ups (glowing orbs)
@@ -1880,21 +2064,41 @@
       }
       ctx.globalAlpha = 1;
 
+      // First-time onboarding hints (non-intrusive)
+      if (gameState === 'playing' && firstPowerupHint && powerups.length > 0) {
+        ctx.fillStyle = 'rgba(255,255,0,0.8)';
+        ctx.font = '11px "Press Start 2P", monospace';
+        ctx.fillText('POWER-UP! Collect glowing orbs', WIDTH/2 - 140, HEIGHT - 40);
+      }
+      if (gameState === 'playing' && firstComboHint && multiplier > 1) {
+        ctx.fillStyle = 'rgba(0,255,255,0.8)';
+        ctx.font = '11px "Press Start 2P", monospace';
+        ctx.fillText('COMBO! Chain kills for x' + multiplier + ' multiplier', WIDTH/2 - 160, HEIGHT - 25);
+        firstComboHint = false;
+      }
+
       if (multiplier > 1) {
         const pulse = 1 + Math.sin(Date.now() / 150) * 0.2;
         ctx.save();
         ctx.scale(pulse, pulse);
-        ctx.fillStyle = multiplier >= 4 ? '#f80' : '#ff0';
+        let multColor = '#ff0';
+        if (multiplier >= 6) multColor = '#f0f';
+        else if (multiplier >= 4) multColor = '#f80';
+        ctx.fillStyle = multColor;
+        ctx.font = `${Math.floor(14 * pulse)}px "Press Start 2P", monospace`;
         ctx.fillText('x' + multiplier, 30 / pulse, 50 / pulse);
+        ctx.font = '12px "Press Start 2P", monospace';
         ctx.restore();
       }
 
-      // Active power-ups
+      // Active power-ups with simple icons
       let puY = 70;
+      const puIcons = { rapid: 'R', spread: 'S', shield: '🛡', smartbomb: '💣', piercing: 'P', slowmo: '⏳' };
       for (let key in activePowerups) {
         if (activePowerups[key] > 0) {
           ctx.fillStyle = '#0ff';
-          ctx.fillText(key.toUpperCase() + ' ' + Math.ceil(activePowerups[key]/60), 30, puY);
+          const icon = puIcons[key] || key[0].toUpperCase();
+          ctx.fillText(icon + ' ' + Math.ceil(activePowerups[key]/60) + 's', 30, puY);
           puY += 16;
         }
       }
@@ -1916,6 +2120,22 @@
         const pulse = Math.sin(Date.now() / 100) * 0.5 + 0.5;
         ctx.fillStyle = `rgba(255,0,0,${0.1 + pulse * 0.15})`;
         ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      }
+      
+      // Power-up collection flash (juicy)
+      if (powerupFlash > 0) {
+        const alpha = powerupFlash / 12 * 0.3;
+        ctx.fillStyle = `rgba(200,255,255,${alpha})`;
+        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      }
+      
+      // High combo flash for addictiveness
+      if (comboFlash > 0 && multiplier >= 4) {
+        const alpha = comboFlash / 10 * 0.25;
+        ctx.strokeStyle = `rgba(255,100,0,${alpha})`;
+        ctx.lineWidth = 6;
+        ctx.strokeRect(4, 4, WIDTH - 8, HEIGHT - 8);
+        ctx.lineWidth = 1;
       }
 
       // CRT effects - scanlines + vignette for 80s arcade feel
@@ -1947,6 +2167,7 @@
         ctx.fillText('PAUSED', WIDTH/2 - 70, HEIGHT/2);
         ctx.font = '12px "Press Start 2P", monospace';
         ctx.fillText('PRESS P TO RESUME', WIDTH/2 - 110, HEIGHT/2 + 30);
+        ctx.fillText('M MUSIC  |  F FULLSCREEN', WIDTH/2 - 120, HEIGHT/2 + 50);
       }
       ctx.restore();
     }
