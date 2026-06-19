@@ -78,6 +78,7 @@
     
     .overlay.visible {
       display: flex;
+      pointer-events: auto;
     }
     
     .overlay button {
@@ -132,17 +133,26 @@
     <canvas id="game" width="800" height="600"></canvas>
     
     <!-- Start Screen -->
-    <div id="start-screen" class="overlay visible" style="pointer-events: all;">
-      <div class="title">RETRO INVADERS</div>
-      <div style="margin: 12px 0; font-size: 14px; color: #0ff;">The 8-bit classic returns! <span style="font-size:10px; color:#888;">v1.0</span></div>
-      <div style="font-size:10px; color:#666; margin-bottom:8px;">Chain kills for multipliers! Power-ups drop from enemies.</div>
-      <div style="margin-bottom: 16px; font-size: 13px; color: #ff0;">HIGH SCORE: <span id="menu-high-score">00000</span></div>
-      <button onclick="startGame()">PRESS SPACE OR CLICK TO START</button>
-      <button onclick="startEndlessMode()" style="margin-top: 8px; background: #f80; color: #000;">ENDLESS MODE (Roguelike)</button>
-      <button onclick="openSettings()" style="margin-top: 8px; background: #555;">SETTINGS</button>
-      <button onclick="openHowTo()" style="margin-top: 8px; background: #555;">HOW TO PLAY</button>
-      <button onclick="showLeaderboard()" style="margin-top: 8px; background: #555; font-size:10px;">LEADERBOARD</button>
-      <button onclick="startDailyChallenge()" style="margin-top: 8px; background: #55f; font-size:10px;">DAILY CHALLENGE</button>
+    <div id="start-screen" class="overlay visible" style="pointer-events: all; background: transparent;">
+      <div class="title" id="title-text" style="display:none;">RETRO INVADERS</div>
+      <div style="margin: 12px 0; font-size: 14px; color: #0ff; display:none;">The 8-bit classic returns! <span style="font-size:10px; color:#888;">v1.0</span></div>
+      <div style="font-size:10px; color:#666; margin-bottom:8px; display:none;">Chain kills for multipliers! Power-ups drop from enemies.</div>
+      <div style="margin-bottom: 16px; font-size: 13px; color: #ff0; display:none;">HIGH SCORE: <span id="menu-high-score">00000</span></div>
+
+      <!-- Player name input - required to play -->
+      <div style="position: absolute; left: 50%; transform: translateX(-50%); top: 230px; z-index: 20;">
+        <label style="font-size: 12px; display: block; margin-bottom: 4px; color: #aaa;">Enter your name to play:</label>
+        <input id="player-name-input" type="text" maxlength="15" placeholder="YOUR NAME" 
+               style="padding: 8px 10px; width: 220px; font-family: 'Press Start 2P', monospace; font-size: 14px; border: 2px solid #0aa; background: #111; color: #fff;">
+        <div id="name-warning" style="color: #f44; font-size: 10px; margin-top: 4px; display: none;">Please enter a name to start!</div>
+      </div>
+
+      <button id="start-btn" onclick="startGame()" disabled style="display:none;">PRESS SPACE OR CLICK TO START</button>
+      <button id="endless-btn" onclick="startEndlessMode()" style="margin-top: 8px; background: #f80; color: #000; display:none;" disabled>ENDLESS MODE (Roguelike)</button>
+      <button id="settings-btn" onclick="openSettings()" style="margin-top: 8px; background: #555; display:none;">SETTINGS</button>
+      <button id="howto-btn" onclick="openHowTo()" style="margin-top: 8px; background: #555; display:none;">HOW TO PLAY</button>
+      <button id="leaderboard-btn" onclick="showLeaderboard()" style="margin-top: 8px; background: #555; font-size:10px; display:none;">LEADERBOARD</button>
+      <button id="daily-btn" onclick="startDailyChallenge()" style="margin-top: 8px; background: #55f; font-size:10px; display:none;" disabled>DAILY CHALLENGE</button>
       <div style="margin-top: 30px; font-size: 11px; color: #666;">
         ← → MOVE &nbsp;&nbsp;&nbsp; SPACE SHOOT
       </div>
@@ -157,7 +167,8 @@
       <!-- Username for leaderboard -->
       <div style="margin: 15px 0; font-size:11px;">
         <div style="margin-bottom:4px;">Enter your name for the leaderboard:</div>
-        <input id="username-input" type="text" placeholder="PLAYER1" maxlength="15" style="padding: 6px; font-family: 'Press Start 2P', monospace; font-size: 12px; width: 180px;">
+        <input id="username-input" type="text" placeholder="PLAYER1" maxlength="15" style="padding: 6px; font-family: 'Press Start 2P', monospace; font-size: 12px; width: 180px;"
+               onkeydown="event.stopImmediatePropagation();" onkeyup="event.stopImmediatePropagation();" onclick="event.stopImmediatePropagation();">
       </div>
       <button onclick="saveScoreWithName()">SAVE TO LEADERBOARD</button>
       
@@ -226,6 +237,11 @@
     
     const WIDTH = 800;
     const HEIGHT = 600;
+
+    // Title screen mouse tracking for hover/clicks
+    let titleMouseX = 0;
+    let titleMouseY = 0;
+    let titleButtons = []; // populated in drawTitleScreen
     
     // Game state
     let gameState = 'start'; // 'start', 'playing', 'gameover'
@@ -342,6 +358,9 @@
     try {
       earnedStars = parseInt(localStorage.getItem('retroInvadersStars')) || 0;
     } catch(e) {}
+
+    // Player name - required to play
+    let playerName = '';
 
     // Run history (recent plays)
     let runHistory = [];
@@ -503,6 +522,29 @@
       document.getElementById('lives').textContent = lives;
       document.getElementById('high-score').textContent = String(highScore).padStart(5, '0');
       document.getElementById('stars').textContent = earnedStars;
+    }
+
+    function updatePlayerName() {
+      const nameInput = document.getElementById('player-name-input');
+      if (!nameInput) return;
+      playerName = nameInput.value.trim().substring(0, 15);
+      try {
+        localStorage.setItem('playerName', playerName);
+      } catch(e) {}
+      updateStartButtons();
+      const warning = document.getElementById('name-warning');
+      if (warning) warning.style.display = 'none';
+    }
+
+    function updateStartButtons() {
+      const hasName = playerName && playerName.length > 0;
+      const startBtn = document.getElementById('start-btn');
+      const endlessBtn = document.getElementById('endless-btn');
+      const dailyBtn = document.getElementById('daily-btn');
+      
+      if (startBtn) startBtn.disabled = !hasName;
+      if (endlessBtn) endlessBtn.disabled = !hasName;
+      if (dailyBtn) dailyBtn.disabled = !hasName;
     }
     
     function createParticles(x, y, count, color = '#ff0', type = 'normal') {
@@ -1302,7 +1344,7 @@
 
       // Auto save to recent run history (as Anonymous until user saves with name)
       const anonEntry = {
-        name: 'Anonymous',
+        name: playerName || 'Anonymous',
         score: score,
         wave: wave,
         biggestCombo: biggestCombo,
@@ -1367,8 +1409,16 @@
       // Auto focus username input
       setTimeout(() => {
         const unameInput = document.getElementById('username-input');
-        if (unameInput) unameInput.focus();
-      }, 100);
+        if (unameInput) {
+          // blur canvas first
+          if (document.activeElement === canvas) {
+            document.body.focus();
+          }
+          if (playerName) unameInput.value = playerName;
+          unameInput.focus();
+          unameInput.select(); // optional: select all for easy replace
+        }
+      }, 150);
 
       document.getElementById('game-over-screen').classList.add('visible');
       document.getElementById('start-screen').classList.remove('visible');
@@ -1386,6 +1436,18 @@
     
     function startGame() {
       if (gameState === 'playing') return;
+      
+      const nameInput = document.getElementById('player-name-input');
+      if (nameInput) {
+        playerName = nameInput.value.trim().substring(0,15);
+      }
+      if (!playerName || playerName.length < 1) {
+        if (nameInput) nameInput.focus();
+        const warning = document.getElementById('name-warning');
+        if (warning) warning.style.display = 'block';
+        return;
+      }
+      try { localStorage.setItem('playerName', playerName); } catch(e){}
       
       resetGame();
       gameState = 'playing';
@@ -1407,6 +1469,18 @@
     function startEndlessMode() {
       if (gameState === 'playing') return;
       
+      const nameInput = document.getElementById('player-name-input');
+      if (nameInput) {
+        playerName = nameInput.value.trim().substring(0,15);
+      }
+      if (!playerName || playerName.length < 1) {
+        if (nameInput) nameInput.focus();
+        const warning = document.getElementById('name-warning');
+        if (warning) warning.style.display = 'block';
+        return;
+      }
+      try { localStorage.setItem('playerName', playerName); } catch(e){}
+      
       resetGame();
       gameState = 'playing';
       endlessMode = true;
@@ -1427,6 +1501,19 @@
 
     function startDailyChallenge() {
       if (gameState === 'playing') return;
+      
+      const nameInput = document.getElementById('player-name-input');
+      if (nameInput) {
+        playerName = nameInput.value.trim().substring(0,15);
+      }
+      if (!playerName || playerName.length < 1) {
+        if (nameInput) nameInput.focus();
+        const warning = document.getElementById('name-warning');
+        if (warning) warning.style.display = 'block';
+        return;
+      }
+      try { localStorage.setItem('playerName', playerName); } catch(e){}
+      
       resetGame();
       gameState = 'playing';
       dailyMode = true;
@@ -1471,12 +1558,16 @@
       // Clear any temporary input
       const input = document.getElementById('username-input');
       if (input) input.value = '';
+      // Restore name input
+      const startName = document.getElementById('player-name-input');
+      if (startName) startName.value = playerName || '';
+      updateStartButtons();
     }
 
     function saveScoreWithName() {
       const input = document.getElementById('username-input');
       let name = input ? input.value.trim() : '';
-      if (!name) name = 'Anonymous';
+      if (!name) name = playerName || 'Anonymous';
       if (name.length > 15) name = name.substring(0, 15);
 
       const entry = {
@@ -1613,10 +1704,13 @@
       const uname = document.getElementById('username-input');
       if (uname) {
         uname.style.display = '';
-        uname.value = '';
+        uname.value = playerName || '';
         const saved = uname.parentNode.querySelector('div');
         if (saved) saved.remove();
       }
+      // Also update start name input
+      const startName = document.getElementById('player-name-input');
+      if (startName) startName.value = playerName || '';
     }
     
     // Simple sound using Web Audio API
@@ -1903,6 +1997,10 @@
     
     // Keyboard support for M key
     window.addEventListener('keydown', (e) => {
+      // Let input fields (like username) handle their own typing
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        return;
+      }
       if ((e.key === 'm' || e.key === 'M') && (gameState === 'playing' || gameState === 'start')) {
         toggleMusic();
         e.preventDefault();
@@ -1956,6 +2054,12 @@
         ctx.fillRect(x, star.y, star.size, star.size);
       }
       ctx.globalAlpha = 1;
+
+      if (gameState === 'start') {
+        drawTitleScreen();
+        ctx.restore();
+        return;
+      }
       
       // Draw player (ship) - animated, organic, interesting retro design (no basic rectangles)
       const px = player.x;
@@ -2530,9 +2634,243 @@
       draw();
       requestAnimationFrame(gameLoop);
     }
+
+    // ========== TITLE SCREEN DRAW ==========
+    function drawTitleScreen() {
+      // Background already drawn in draw(), we draw on top
+
+      // Subtle floating nebula orbs (very faint)
+      ctx.fillStyle = 'rgba(100, 150, 255, 0.03)';
+      ctx.beginPath();
+      ctx.arc(150, 200, 120, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(WIDTH - 180, HEIGHT - 220, 150, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 100, 150, 0.02)';
+      ctx.beginPath();
+      ctx.arc(650, 150, 80, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Parallax stars layers (already drawn in main draw, we enhance here)
+      // Title - big glowing "RETRO INVADERS"
+      const titleY = 140;
+      ctx.font = 'bold 52px "Press Start 2P", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+
+      // Multiple glow layers for strong glowing title
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.15)';
+      ctx.fillText('RETRO INVADERS', WIDTH/2 + 2, titleY + 3); // soft outer
+      ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+      ctx.fillText('RETRO INVADERS', WIDTH/2, titleY + 1);
+      ctx.fillStyle = '#0ff';
+      ctx.fillText('RETRO INVADERS', WIDTH/2, titleY);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('RETRO INVADERS', WIDTH/2, titleY);
+
+      // Subtle pulse on glow
+      const pulse = 0.8 + Math.sin(Date.now() / 800) * 0.2;
+      ctx.fillStyle = `rgba(0, 255, 255, ${0.2 * pulse})`;
+      ctx.fillText('RETRO INVADERS', WIDTH/2, titleY);
+
+      // Tagline
+      ctx.font = '14px "Press Start 2P", system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(150, 200, 255, 0.7)';
+      ctx.fillText("They have feelings… and they remember.", WIDTH/2, titleY + 40);
+
+      // Animated enemy previews on sides (emotional hook)
+      const time = Date.now() / 300;
+      const emotions = ['neutral', 'happy', 'sad', 'celebrate'];
+      const previewY = HEIGHT / 2 - 20;
+
+      // Left side previews
+      for (let i = 0; i < 3; i++) {
+        const ex = 120 + i * 40;
+        const ey = previewY + Math.sin(time + i) * 8;
+        const mood = emotions[(Math.floor(time / 2) + i) % 4];
+        drawPreviewEnemy(ex, ey, i % 5, mood);
+      }
+
+      // Right side previews
+      for (let i = 0; i < 3; i++) {
+        const ex = WIDTH - 120 - i * 40;
+        const ey = previewY + Math.cos(time + i) * 8;
+        const mood = emotions[(Math.floor(time / 3) + i + 2) % 4];
+        drawPreviewEnemy(ex, ey, (i + 2) % 5, mood);
+      }
+
+      // Tiny animated player ship preview
+      const playerPreviewX = WIDTH / 2;
+      const playerPreviewY = HEIGHT - 120;
+      ctx.save();
+      ctx.translate(playerPreviewX, playerPreviewY);
+      const playerTilt = Math.sin(time * 1.5) * 0.1;
+      ctx.rotate(playerTilt);
+      // Simple cute player preview
+      ctx.fillStyle = '#0f8';
+      ctx.beginPath();
+      ctx.moveTo(-12, 4);
+      ctx.quadraticCurveTo(-14, -2, -6, -6);
+      ctx.lineTo(0, -8);
+      ctx.lineTo(6, -6);
+      ctx.quadraticCurveTo(14, -2, 12, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#aff';
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 4, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f80';
+      ctx.fillRect(-8, 3, 4, 3);
+      ctx.fillRect(4, 3, 4, 3);
+      ctx.restore();
+
+      // Define buttons for this frame (for click/hover detection)
+      titleButtons = [];
+      const buttonYStart = 280;
+      const buttonSpacing = 52;
+      const buttonWidth = 280;
+      const buttonHeight = 38;
+      const buttonX = WIDTH / 2 - buttonWidth / 2;
+
+      const hasName = playerName && playerName.length > 0;
+      const buttons = [
+        { label: "PLAY NORMAL", action: () => startGame(), play: true },
+        { label: "ENDLESS MODE", action: () => startEndlessMode(), play: true },
+        { label: "SETTINGS", action: () => openSettings(), play: false },
+        { label: "LEADERBOARD", action: () => showLeaderboard(), play: false }
+      ];
+
+      buttons.forEach((btn, idx) => {
+        const by = buttonYStart + idx * buttonSpacing;
+        const isHover = titleMouseX > buttonX && titleMouseX < buttonX + buttonWidth &&
+                        titleMouseY > by && titleMouseY < by + buttonHeight;
+        const canPlay = !btn.play || hasName;
+        titleButtons.push({ x: buttonX, y: by, w: buttonWidth, h: buttonHeight, action: canPlay ? btn.action : null });
+
+        // Button base
+        let baseColor = isHover ? '#112' : '#0a0a0a';
+        if (!canPlay) baseColor = '#222';
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(buttonX, by, buttonWidth, buttonHeight);
+
+        // Border
+        let borderColor = isHover ? '#0ff' : '#0aa';
+        if (!canPlay) borderColor = '#444';
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = isHover ? 3 : 2;
+        ctx.strokeRect(buttonX, by, buttonWidth, buttonHeight);
+        ctx.lineWidth = 1;
+
+        // Left accent
+        if (isHover && canPlay) {
+          ctx.fillStyle = '#0ff';
+          ctx.fillRect(buttonX, by + 4, 4, buttonHeight - 8);
+        }
+
+        // Label
+        ctx.fillStyle = isHover && canPlay ? '#0ff' : (canPlay ? '#ccc' : '#666');
+        ctx.font = '16px "Press Start 2P", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(btn.label, WIDTH/2, by + 26);
+      });
+      ctx.textAlign = 'left';
+
+      // High Score display (bottom)
+      ctx.fillStyle = '#555';
+      ctx.font = '12px "Press Start 2P", monospace';
+      ctx.fillText('HIGH SCORE', WIDTH/2 - 70, HEIGHT - 80);
+      ctx.fillStyle = '#ff0';
+      ctx.font = '20px "Press Start 2P", monospace';
+      ctx.fillText(String(highScore).padStart(5, '0'), WIDTH/2 - 55, HEIGHT - 55);
+
+      // Subtle floating particles
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      for (let i = 0; i < 25; i++) {
+        const px = (WIDTH * 0.1 + (i * 31 % (WIDTH * 0.8)) + Math.sin(Date.now() / 2000 + i) * 15) % WIDTH;
+        const py = (60 + (i * 47) % (HEIGHT - 140) + Math.cos(Date.now() / 2500 + i * 0.7) * 8) % (HEIGHT - 100);
+        ctx.fillRect(px, py, 1.5, 1.5);
+      }
+
+      // Music toggle hint (top right, small)
+      ctx.fillStyle = musicOn ? '#0ff' : '#555';
+      ctx.font = '10px "Press Start 2P", monospace';
+      ctx.fillText(musicOn ? '♪ ON' : '♪ OFF', WIDTH - 70, 35);
+
+      // Version
+      ctx.fillStyle = '#333';
+      ctx.font = '10px "Press Start 2P", monospace';
+      ctx.fillText('v1.0', 25, HEIGHT - 20);
+
+      // Controls reminder
+      ctx.fillStyle = '#444';
+      ctx.font = '10px "Press Start 2P", monospace';
+      ctx.fillText('ARROW KEYS / SPACE', WIDTH/2 - 90, HEIGHT - 20);
+    }
+
+    function drawPreviewEnemy(ex, ey, type, mood) {
+      const w = 22;
+      const h = 16;
+      let color = '#f44';
+      if (type === 1) color = '#fa4';
+      else if (type === 2) color = '#4cf';
+      else if (type === 3) color = '#a80';
+      else if (type === 4) color = '#6c6';
+
+      ctx.fillStyle = color;
+      if (type === 0 || type === 4) {
+        ctx.beginPath();
+        ctx.ellipse(ex + w/2, ey + h/2, w/2, h/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(ex, ey, w, h);
+      }
+
+      // Simple face for preview
+      ctx.fillStyle = '#111';
+      ctx.fillRect(ex + 5, ey + 4, 3, 3);
+      ctx.fillRect(ex + w - 8, ey + 4, 3, 3);
+
+      if (mood === 'happy') {
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(ex + 6, ey + 9, 10, 2);
+        ctx.fillStyle = '#ff69b4';
+        ctx.fillRect(ex + 2, ey - 2, 2, 2);
+        ctx.fillRect(ex + w - 4, ey - 2, 2, 2);
+      } else if (mood === 'sad') {
+        ctx.fillStyle = '#88f';
+        ctx.fillRect(ex + 6, ey + 10, 4, 1);
+        ctx.fillRect(ex + w - 10, ey + 9, 4, 1);
+      } else if (mood === 'celebrate') {
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(ex + 5, ey + 9, 12, 3);
+      }
+    }
+
+    function handleTitleClick() {
+      // Check which button was clicked
+      for (const btn of titleButtons) {
+        if (titleMouseX >= btn.x && titleMouseX <= btn.x + btn.w &&
+            titleMouseY >= btn.y && titleMouseY <= btn.y + btn.h) {
+          if (typeof btn.action === 'function') {
+            btn.action();
+          }
+          return;
+        }
+      }
+      // Fallback: if clicked and has name, start normal game
+      const nameInput = document.getElementById('player-name-input');
+      if (nameInput && nameInput.value.trim().length > 0) {
+        startGame();
+      }
+    }
     
     // Input handling
     window.addEventListener('keydown', (e) => {
+      // Let input fields (like username) handle their own typing
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        return;
+      }
       keys[e.key] = true;
       
       if (gameState === 'start' && (e.key === ' ' || e.key === 'Space')) {
@@ -2550,13 +2888,23 @@
     });
     
     window.addEventListener('keyup', (e) => {
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        return;
+      }
       keys[e.key] = false;
     });
     
+    // Mouse tracking for title screen hover/clicks
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      titleMouseX = e.clientX - rect.left;
+      titleMouseY = e.clientY - rect.top;
+    });
+
     // Mouse support for shooting + clicking start
     canvas.addEventListener('click', (e) => {
       if (gameState === 'start') {
-        startGame();
+        handleTitleClick();
       } else if (gameState === 'playing') {
         const now = Date.now();
         if (now - lastShotTime > SHOOT_COOLDOWN) {
@@ -2564,13 +2912,17 @@
           lastShotTime = now;
         }
       } else if (gameState === 'gameover') {
-        restartGame();
+        // Do nothing - user should use the explicit buttons (PLAY AGAIN, HOME, etc.)
+        // This prevents accidental restarts when clicking the overlay
       }
     });
     
-    // Allow clicking the canvas to focus for keyboard
+    // Allow clicking the canvas to focus for keyboard (but not when input is active)
     canvas.addEventListener('mousedown', () => {
-      canvas.focus();
+      const active = document.activeElement;
+      if (!active || active.tagName !== 'INPUT') {
+        canvas.focus();
+      }
     });
 
     // Mobile touch support (simple: drag to move, tap to shoot)
@@ -2609,6 +2961,9 @@
     
     // Keyboard restart from anywhere
     window.addEventListener('keypress', (e) => {
+      if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+        return;
+      }
       if (e.key.toLowerCase() === 'r' && gameState === 'gameover') {
         restartGame();
       }
@@ -2625,6 +2980,28 @@
       // Set initial high score displays
       document.getElementById('high-score').textContent = String(highScore).padStart(5, '0');
       document.getElementById('menu-high-score').textContent = String(highScore).padStart(5, '0');
+      
+      // Load saved player name
+      try {
+        playerName = localStorage.getItem('playerName') || '';
+      } catch(e) {}
+      const nameInput = document.getElementById('player-name-input');
+      if (nameInput) {
+        nameInput.value = playerName;
+        nameInput.addEventListener('input', updatePlayerName);
+      }
+      updateStartButtons();
+      
+      // Show warning if no name on first load
+      const nameWarning = document.getElementById('name-warning');
+      if (nameWarning && !playerName) {
+        nameWarning.style.display = 'block';
+      }
+
+      // Make sure name input is visible and focused if needed
+      if (nameInput && !playerName) {
+        // will show warning
+      }
       
       // Set initial music button state
       const musicBtn = document.getElementById('music-btn');
