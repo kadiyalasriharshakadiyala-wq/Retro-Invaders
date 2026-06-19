@@ -315,6 +315,8 @@
     let masterVolume = 1;
     let difficulty = 1; // 1 normal, >1 harder, <1 easier
 
+    let bgIntensity = 1; // for combo/boss reactivity
+
     let activePowerups = {}; // e.g. rapid: frames left
 
     // Combo system
@@ -441,6 +443,7 @@
       scorePops = [];
       firstPowerupHint = true;
       firstComboHint = true;
+      bgIntensity = 1;
 
       // Init destructible barriers
       barriers = [];
@@ -487,7 +490,9 @@
             type: (r + Math.floor(wave / 2)) % 5, // more variety: 0-4 now includes diver/bomber vibes
             id: ++enemyIdCounter,
             emotion: 'neutral',
-            emotionTime: 0
+            emotionTime: 0,
+            hitFlash: 0,
+            hitFlash: 0
           });
         }
       }
@@ -507,17 +512,19 @@
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 3.5 + 1.5;
+        const life = type === 'smoke' ? 40 + Math.random() * 20 : (type === 'ring' ? 15 : 24 + Math.random() * 14);
         particles.push({
           x: x,
           y: y,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed - (type === 'debris' ? 0.5 : 0), // slight gravity for debris
-          life: type === 'smoke' ? 40 + Math.random() * 20 : 24 + Math.random() * 14,
+          life: life,
           color: color,
-          size: type === 'smoke' ? Math.random() * 5 + 2 : Math.random() * 3.5 + 1.5,
+          size: type === 'smoke' ? Math.random() * 5 + 2 : (type === 'ring' ? 2 : Math.random() * 3.5 + 1.5),
           rotation: Math.random() * Math.PI * 2,
           rotSpeed: (Math.random() - 0.5) * 0.2,
-          type: type
+          type: type,
+          maxLife: life
         });
       }
     }
@@ -566,7 +573,13 @@
           if (bar.health > 0 && b.x > bar.x && b.x < bar.x + bar.width && b.y > bar.y && b.y < bar.y + bar.height) {
             bar.health--;
             if (!b.piercing) bullets.splice(i, 1);
-            createParticles(b.x, b.y, 4, '#888');
+            createParticles(b.x, b.y, 4, '#888', 'debris');
+            createParticles(b.x, b.y, 2, '#666', 'normal');
+            if (bar.health <= 0) {
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 10, '#888', 'debris');
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 3, '#fff', 'ring');
+              triggerShake(5);
+            }
             break;
           }
         }
@@ -575,7 +588,8 @@
         if (boss && b.x > boss.x && b.x < boss.x + boss.width && b.y > boss.y && b.y < boss.y + boss.height) {
           boss.health -= 1;
           if (!b.piercing) bullets.splice(i, 1);
-          createParticles(b.x, b.y, 5, '#f00');
+          createParticles(b.x, b.y, 5, '#f00', 'debris');
+          createParticles(b.x, b.y, 2, '#fff', 'ring');
           triggerShake(3);
         }
         
@@ -601,7 +615,13 @@
           if (bar.health > 0 && eb.x > bar.x && eb.x < bar.x + bar.width && eb.y > bar.y && eb.y < bar.y + bar.height) {
             bar.health--;
             enemyBullets.splice(i, 1);
-            createParticles(eb.x, eb.y, 4, '#888');
+            createParticles(eb.x, eb.y, 4, '#888', 'debris');
+            createParticles(eb.x, eb.y, 1, '#fff', 'ring');
+            if (bar.health <= 0) {
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 10, '#888', 'debris');
+              createParticles(bar.x + bar.width/2, bar.y + bar.height/2, 3, '#fff', 'ring');
+              triggerShake(5);
+            }
             hitBar = true;
             break;
           }
@@ -721,9 +741,25 @@
           // Different sound per power-up type
           const puSound = (p.type === 'smartbomb') ? 'wave' : 'powerup';
           playSound(puSound);
-          triggerShake(4);
-          powerupFlash = 12;
-          createParticles(player.x, player.y - 10, 8, '#fff', 'normal');
+          triggerShake(8);
+          powerupFlash = 15;
+          
+          // Short slow-mo effect on pickup
+          if (p.type !== 'slowmo') {
+            // Brief slow by boosting slowmo temporarily
+            const oldSlow = activePowerups.slowmo || 0;
+            activePowerups.slowmo = Math.max(oldSlow, 18); // ~0.3s at 60fps
+          }
+          
+          createParticles(player.x, player.y - 10, 10, '#fff', 'normal');
+          // Rising +Power-up text
+          scorePops.push({
+            x: player.x,
+            y: player.y - 15,
+            value: p.type.toUpperCase(),
+            life: 35,
+            isPower: true
+          });
           firstPowerupHint = false;
         }
       }
@@ -745,6 +781,12 @@
       }
       if (powerupFlash > 0) powerupFlash--;
       if (comboFlash > 0) comboFlash--;
+      
+      // Background reactivity for high combo or boss
+      let targetIntensity = 1;
+      if (multiplier >= 4) targetIntensity = 1.5 + (multiplier - 4) * 0.2;
+      if (boss) targetIntensity = Math.max(targetIntensity, 1.8);
+      bgIntensity = bgIntensity * 0.95 + targetIntensity * 0.05; // smooth lerp
 
       // Slow-mo effect
       if (activePowerups.slowmo > 0) {
@@ -790,7 +832,10 @@
             comboTimer = 120; // frames to chain
             const oldMult = multiplier;
             multiplier = Math.min(8, 1 + Math.floor(combo / 4));
-            if (multiplier > oldMult) comboFlash = 10;
+            if (multiplier > oldMult) {
+              comboFlash = 10;
+              if (multiplier >= 4) bgIntensity = Math.max(bgIntensity, 1.3);
+            }
             biggestCombo = Math.max(biggestCombo, multiplier);
             stats.destroyed++;
             updateHUD();
@@ -807,22 +852,45 @@
             const color = enemy.type === 0 ? '#f44' : (enemy.type === 1 ? '#fa4' : '#4ff');
             createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 5, color, 'debris');
             createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 4, '#ffdd44', 'normal');
+            // Expanding ring on impact
+            createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 1, '#fff', 'ring');
             
-            // Special heart/confetti if happy enemy killed (emotional reward)
+            // Kill feedback variety based on mood
             if (enemy.emotion === 'happy') {
-              for (let i = 0; i < 5; i++) {
+              // Happy: pink hearts + confetti
+              for (let i = 0; i < 6; i++) {
                 particles.push({
                   x: enemy.x + enemy.width / 2,
                   y: enemy.y + enemy.height / 2,
                   vx: (Math.random() - 0.5) * 4,
                   vy: (Math.random() - 1.5) * 3,
-                  life: 30,
+                  life: 35,
                   color: '#ff69b4',
                   size: 3,
                   type: 'heart'
                 });
               }
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 3, '#ff69b4', 'normal');
+            } else if (enemy.emotion === 'sad') {
+              // Scared/sad: blueish + faster debris
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 6, '#88ccff', 'debris');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 3, '#4444ff', 'normal');
+            } else if (boss && boss.health <= 0) {
+              // Boss big explosion
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 15, '#ff0', 'debris');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 10, '#ffdd44', 'normal');
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 5, '#fff', 'ring');
+            } else {
+              // Normal
+              createParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, 3, color, 'debris');
             }
+            
+            // Small knockback for impact feel
+            enemy.y -= 3;
+            if (bullet.vx) enemy.x += bullet.vx * 0.5; // slight horizontal
+            
+            // Brief white flash
+            enemy.hitFlash = 5;
             
             // Remove
             enemies.splice(ei, 1);
@@ -834,7 +902,10 @@
             // Play hit sound based on mood
             const hitSound = enemy.emotion === 'happy' ? 'hit-happy' : (enemy.emotion === 'sad' ? 'hit-sad' : 'hit');
             playSound(hitSound);
-            triggerShake(4);
+            let shakeAmount = 4;
+            if (multiplier >= 6) shakeAmount = 7;
+            else if (multiplier >= 4) shakeAmount = 5;
+            triggerShake(shakeAmount);
             
             // Hero is happy when he kills an enemy!
             makePlayerHappy();
@@ -909,6 +980,7 @@
             activePowerups.shield = 0;
             createParticles(player.x, player.y, 5, '#0ff', 'smoke');
           createParticles(player.x, player.y, 3, '#fff', 'normal');
+          createParticles(player.x, player.y, 1, '#fff', 'ring');
           } else {
             createParticles(player.x, player.y - 5, 6, '#f44', 'debris');
             createParticles(player.x, player.y - 5, 5, '#666', 'smoke');
@@ -981,6 +1053,7 @@
           createParticles(boss.x + boss.width/2, boss.y + boss.height/2, 25, '#ff0');
           triggerShake(20);
           score += 1000;
+          bgIntensity = 2.5; // background reactivity
           boss = null;
           createWaveEnemies();
         }
@@ -1052,6 +1125,8 @@
         enemy.emotion = 'happy';
         enemy.emotionTime = 50;
         stats.happyMade++;
+        enemy.hitFlash = 8; // color flash
+        createParticles(enemy.x + enemy.width/2, enemy.y + enemy.height/2, 4, '#ff69b4', 'normal');
       }
     }
     
@@ -1061,6 +1136,8 @@
         enemy.emotion = 'sad';
         enemy.emotionTime = 40;
         stats.sadMade++;
+        enemy.hitFlash = 8;
+        createParticles(enemy.x + enemy.width/2, enemy.y + enemy.height/2, 3, '#88aaff', 'normal');
       }
     }
     
@@ -1766,14 +1843,14 @@
       for (let i = 0; i < stars.length * 0.6; i++) {
         const s = stars[i % stars.length];
         const x = (s.x + parallaxOffset * 0.3) % WIDTH;
-        ctx.globalAlpha = s.brightness * 0.6;
+        ctx.globalAlpha = s.brightness * 0.6 * bgIntensity;
         ctx.fillRect(x, s.y, s.size * 0.7, s.size * 0.7);
       }
       // Layer 2 (mid)
       ctx.fillStyle = '#fff';
       for (const star of stars) {
         const x = (star.x + parallaxOffset * 0.8) % WIDTH;
-        ctx.globalAlpha = star.brightness;
+        ctx.globalAlpha = star.brightness * bgIntensity;
         ctx.fillRect(x, star.y, star.size, star.size);
       }
       ctx.globalAlpha = 1;
@@ -2006,11 +2083,33 @@
         const isHappy = emotion === 'happy' || emotion === 'celebrate';
         const isSad = emotion === 'sad';
         
+        if (enemy.hitFlash > 0) {
+          enemy.hitFlash--;
+        }
+        
         // === Type-specific interesting shapes using paths (curves, wings, legs) ===
         // Body color shifts with emotion
         let baseColor = enemy.type === 0 ? '#f44' : (enemy.type === 1 ? '#fa4' : (enemy.type === 2 ? '#4cf' : (enemy.type === 3 ? '#a80' : '#6c6')));
         if (isHappy) baseColor = '#f88';
         else if (isSad) baseColor = '#88a';
+
+        if (enemy.hitFlash > 0) {
+          ctx.globalAlpha = 0.5;
+          ctx.fillStyle = '#fff';
+          // Flash overlay (simple rect for all for speed)
+          ctx.fillRect(ex, ey, w, h);
+          ctx.globalAlpha = 1;
+        }
+        
+        // Happy pink glow
+        if (isHappy) {
+          ctx.globalAlpha = 0.3 + Math.sin(Date.now()/150) * 0.1;
+          ctx.fillStyle = '#ff69b4';
+          ctx.beginPath();
+          ctx.ellipse(ex + w/2, ey + h/2, w/2 + 3, h/2 + 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
 
         if (enemy.type === 0) {
           // Classic squid/invader - curved body + animated legs
@@ -2143,7 +2242,8 @@
       
       // Particles - more realistic with rotation and variety
       for (const p of particles) {
-        const alpha = Math.max(0.05, p.life / (p.type === 'smoke' ? 50 : 30));
+        const lifeRatio = p.life / (p.maxLife || 30);
+        const alpha = Math.max(0.05, lifeRatio);
         ctx.globalAlpha = alpha;
         ctx.fillStyle = p.color;
         
@@ -2158,8 +2258,17 @@
         } else if (p.type === 'smoke') {
           // Soft smoke circles
           ctx.beginPath();
-          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+          ctx.arc(0, 0, p.size / 2 * (1 + (1 - lifeRatio) * 0.5), 0, Math.PI * 2);
           ctx.fill();
+        } else if (p.type === 'ring') {
+          // Expanding ring for impacts
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 2;
+          const ringSize = p.size * (1 + (1 - lifeRatio) * 3); // expands
+          ctx.beginPath();
+          ctx.arc(0, 0, ringSize, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.lineWidth = 1;
         } else {
           // Debris with slight elongation
           ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
@@ -2174,11 +2283,17 @@
       ctx.fillText('WAVE ' + wave, WIDTH - 110, 30);
 
       // Score popups for enjoyable feedback
-      ctx.fillStyle = '#ff0';
       for (const pop of scorePops) {
-        const alpha = pop.life / 40;
+        const alpha = pop.life / (pop.isPower ? 35 : 40);
         ctx.globalAlpha = alpha;
-        ctx.fillText('+' + pop.value, pop.x - 10, pop.y);
+        if (pop.isPower) {
+          ctx.fillStyle = '#0ff';
+          ctx.fillText('+' + pop.value, pop.x - 30, pop.y);
+          ctx.fillStyle = '#ff0';
+        } else {
+          ctx.fillStyle = '#ff0';
+          ctx.fillText('+' + pop.value, pop.x - 10, pop.y);
+        }
       }
       ctx.globalAlpha = 1;
 
@@ -2200,13 +2315,27 @@
         ctx.save();
         ctx.scale(pulse, pulse);
         let multColor = '#ff0';
-        if (multiplier >= 6) multColor = '#f0f';
-        else if (multiplier >= 4) multColor = '#f80';
+        let borderAlpha = 0;
+        if (multiplier >= 6) {
+          multColor = '#f0f';
+          borderAlpha = 0.3 + Math.sin(Date.now()/100)*0.2;
+        } else if (multiplier >= 4) {
+          multColor = '#f80';
+          borderAlpha = 0.2 + Math.sin(Date.now()/120)*0.15;
+        }
         ctx.fillStyle = multColor;
         ctx.font = `${Math.floor(14 * pulse)}px "Press Start 2P", monospace`;
         ctx.fillText('x' + multiplier, 30 / pulse, 50 / pulse);
         ctx.font = '12px "Press Start 2P", monospace';
         ctx.restore();
+        
+        // Subtle screen border glow at high combo
+        if (borderAlpha > 0) {
+          ctx.strokeStyle = `rgba(255,150,0,${borderAlpha})`;
+          ctx.lineWidth = 3;
+          ctx.strokeRect(3, 3, WIDTH-6, HEIGHT-6);
+          ctx.lineWidth = 1;
+        }
       }
 
       // Active power-ups with simple icons
