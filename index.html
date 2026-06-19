@@ -139,13 +139,7 @@
       <div style="font-size:10px; color:#666; margin-bottom:8px; display:none;">Chain kills for multipliers! Power-ups drop from enemies.</div>
       <div style="margin-bottom: 16px; font-size: 13px; color: #ff0; display:none;">HIGH SCORE: <span id="menu-high-score">00000</span></div>
 
-      <!-- Player name input - required to play -->
-      <div style="position: absolute; left: 50%; transform: translateX(-50%); top: 230px; z-index: 20;">
-        <label style="font-size: 12px; display: block; margin-bottom: 4px; color: #aaa;">Enter your name to play:</label>
-        <input id="player-name-input" type="text" maxlength="15" placeholder="YOUR NAME" 
-               style="padding: 8px 10px; width: 220px; font-family: 'Press Start 2P', monospace; font-size: 14px; border: 2px solid #0aa; background: #111; color: #fff;">
-        <div id="name-warning" style="color: #f44; font-size: 10px; margin-top: 4px; display: none;">Please enter a name to start!</div>
-      </div>
+      <!-- Name entry handled on dedicated screen; no visible input on title -->
 
       <button id="start-btn" onclick="startGame()" disabled style="display:none;">PRESS SPACE OR CLICK TO START</button>
       <button id="endless-btn" onclick="startEndlessMode()" style="margin-top: 8px; background: #f80; color: #000; display:none;" disabled>ENDLESS MODE (Roguelike)</button>
@@ -158,19 +152,28 @@
       </div>
     </div>
     
+    <!-- Name Entry Screen (forced on first play) -->
+    <div id="name-entry-screen" class="overlay">
+      <div style="font-size: 28px; margin-bottom: 20px; color: #0ff;">ENTER YOUR NAME</div>
+      <div style="margin-bottom: 10px; font-size: 14px;">to begin your adventure</div>
+      <div style="margin: 20px 0;">
+        <input id="name-entry-input" type="text" maxlength="15" placeholder="YOUR NAME" 
+               style="padding: 10px 12px; width: 240px; font-family: 'Press Start 2P', monospace; font-size: 16px; border: 3px solid #0aa; background: #111; color: #0ff; text-align: center;">
+      </div>
+      <div id="name-entry-error" style="color:#f44; font-size:11px; margin-bottom:10px; min-height:14px;"></div>
+      <button onclick="confirmPlayerName()" style="background:#0f8; color:#000;">CONFIRM &amp; START</button>
+      <div style="margin-top:15px; font-size:10px; color:#666;">(3-15 characters, no spaces at ends)</div>
+    </div>
+    
     <!-- Game Over Screen -->
     <div id="game-over-screen" class="overlay">
       <div style="font-size: 32px; color: #f44; margin-bottom: 10px;">GAME OVER</div>
       <div class="final-score">SCORE: <span id="final-score">00000</span></div>
       <div style="margin-bottom: 12px; font-size: 13px; color: #ff0;">HIGH SCORE: <span id="final-high-score">00000</span></div>
       
-      <!-- Username for leaderboard -->
-      <div style="margin: 15px 0; font-size:11px;">
-        <div style="margin-bottom:4px;">Enter your name for the leaderboard:</div>
-        <input id="username-input" type="text" placeholder="PLAYER1" maxlength="15" style="padding: 6px; font-family: 'Press Start 2P', monospace; font-size: 12px; width: 180px;"
-               onkeydown="event.stopImmediatePropagation();" onkeyup="event.stopImmediatePropagation();" onclick="event.stopImmediatePropagation();">
+      <div id="auto-save-message" style="margin: 15px 0; font-size:12px; color:#0f0;">
+        Score automatically saved to leaderboard as <span id="saved-as-name" style="color:#fff;"></span>
       </div>
-      <button onclick="saveScoreWithName()">SAVE TO LEADERBOARD</button>
       
       <button onclick="restartGame()" style="margin-top: 8px;">PLAY AGAIN (R)</button>
       <button onclick="goToHome()" style="margin-top: 8px; background: #555;">HOME</button>
@@ -525,15 +528,7 @@
     }
 
     function updatePlayerName() {
-      const nameInput = document.getElementById('player-name-input');
-      if (!nameInput) return;
-      playerName = nameInput.value.trim().substring(0, 15);
-      try {
-        localStorage.setItem('playerName', playerName);
-      } catch(e) {}
-      updateStartButtons();
-      const warning = document.getElementById('name-warning');
-      if (warning) warning.style.display = 'none';
+      // Legacy - no longer used on visible input (name entry is separate screen)
     }
 
     function updateStartButtons() {
@@ -1342,18 +1337,32 @@
       document.getElementById('final-score').textContent = String(score).padStart(5, '0');
       document.getElementById('final-high-score').textContent = String(highScore).padStart(5, '0');
 
-      // Auto save to recent run history (as Anonymous until user saves with name)
-      const anonEntry = {
-        name: playerName || 'Anonymous',
-        score: score,
-        wave: wave,
-        biggestCombo: biggestCombo,
-        stars: Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed,
-        date: new Date().toLocaleDateString()
-      };
-      runHistory.unshift(anonEntry);
-      runHistory = runHistory.slice(0, 5);
-      localStorage.setItem('retroInvadersHistory', JSON.stringify(runHistory));
+      // Show auto-save confirmation using the player's name
+      const saveMsg = document.getElementById('auto-save-message');
+      const savedNameSpan = document.getElementById('saved-as-name');
+      if (savedNameSpan) savedNameSpan.textContent = playerName || 'Unknown';
+      if (saveMsg) saveMsg.style.display = playerName ? 'block' : 'none';
+
+      // Automatically save score to leaderboard with player name (no anonymous)
+      if (playerName) {
+        const entry = {
+          name: playerName,
+          score: score,
+          wave: wave,
+          biggestCombo: biggestCombo,
+          stars: Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed,
+          date: new Date().toLocaleDateString()
+        };
+        leaderboard.push(entry);
+        leaderboard.sort((a, b) => b.score - a.score);
+        leaderboard = leaderboard.slice(0, 10);
+        localStorage.setItem('retroInvadersLeaderboard', JSON.stringify(leaderboard));
+        
+        // Also keep in recent run history
+        runHistory.unshift(entry);
+        runHistory = runHistory.slice(0, 5);
+        localStorage.setItem('retroInvadersHistory', JSON.stringify(runHistory));
+      }
 
       // Aftermath stats screen
       const statsDiv = document.getElementById('game-over-stats') || document.createElement('div');
@@ -1437,17 +1446,10 @@
     function startGame() {
       if (gameState === 'playing') return;
       
-      const nameInput = document.getElementById('player-name-input');
-      if (nameInput) {
-        playerName = nameInput.value.trim().substring(0,15);
-      }
-      if (!playerName || playerName.length < 1) {
-        if (nameInput) nameInput.focus();
-        const warning = document.getElementById('name-warning');
-        if (warning) warning.style.display = 'block';
+      if (!playerName) {
+        showNameEntry();
         return;
       }
-      try { localStorage.setItem('playerName', playerName); } catch(e){}
       
       resetGame();
       gameState = 'playing';
@@ -1469,17 +1471,10 @@
     function startEndlessMode() {
       if (gameState === 'playing') return;
       
-      const nameInput = document.getElementById('player-name-input');
-      if (nameInput) {
-        playerName = nameInput.value.trim().substring(0,15);
-      }
-      if (!playerName || playerName.length < 1) {
-        if (nameInput) nameInput.focus();
-        const warning = document.getElementById('name-warning');
-        if (warning) warning.style.display = 'block';
+      if (!playerName) {
+        showNameEntry();
         return;
       }
-      try { localStorage.setItem('playerName', playerName); } catch(e){}
       
       resetGame();
       gameState = 'playing';
@@ -1502,17 +1497,10 @@
     function startDailyChallenge() {
       if (gameState === 'playing') return;
       
-      const nameInput = document.getElementById('player-name-input');
-      if (nameInput) {
-        playerName = nameInput.value.trim().substring(0,15);
-      }
-      if (!playerName || playerName.length < 1) {
-        if (nameInput) nameInput.focus();
-        const warning = document.getElementById('name-warning');
-        if (warning) warning.style.display = 'block';
+      if (!playerName) {
+        showNameEntry();
         return;
       }
-      try { localStorage.setItem('playerName', playerName); } catch(e){}
       
       resetGame();
       gameState = 'playing';
@@ -1552,16 +1540,70 @@
       document.getElementById('start-screen').classList.add('visible');
     }
 
+    function showNameEntry() {
+      // Hide all other screens
+      document.getElementById('start-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
+      document.getElementById('settings-screen').classList.remove('visible');
+      document.getElementById('howto-screen').classList.remove('visible');
+      document.getElementById('leaderboard-screen').classList.remove('visible');
+      
+      const nameScreen = document.getElementById('name-entry-screen');
+      nameScreen.classList.add('visible');
+      
+      const input = document.getElementById('name-entry-input');
+      const error = document.getElementById('name-entry-error');
+      if (input) {
+        input.value = '';
+        input.focus();
+        // Enter key support
+        input.onkeydown = function(ev) {
+          if (ev.key === 'Enter') {
+            confirmPlayerName();
+          }
+        };
+      }
+      if (error) error.style.display = 'none';
+    }
+
+    function confirmPlayerName() {
+      const input = document.getElementById('name-entry-input');
+      const error = document.getElementById('name-entry-error');
+      let name = input ? input.value.trim() : '';
+      
+      if (name.length < 3) {
+        if (error) {
+          error.textContent = 'Name must be at least 3 characters.';
+          error.style.display = 'block';
+        }
+        if (input) input.focus();
+        return;
+      }
+      if (name.length > 15) name = name.substring(0,15);
+      
+      playerName = name;
+      try {
+        localStorage.setItem('playerName', playerName);
+      } catch(e) {}
+      
+      // Hide name entry
+      document.getElementById('name-entry-screen').classList.remove('visible');
+      
+      // Show normal title
+      document.getElementById('start-screen').classList.add('visible');
+      
+      // Update any displays
+      updateHUD();
+      draw();
+    }
+
     function goToHome() {
       document.getElementById('game-over-screen').classList.remove('visible');
+      document.getElementById('leaderboard-screen').classList.remove('visible');
       document.getElementById('start-screen').classList.add('visible');
-      // Clear any temporary input
+      // Clear any game-over username display
       const input = document.getElementById('username-input');
       if (input) input.value = '';
-      // Restore name input
-      const startName = document.getElementById('player-name-input');
-      if (startName) startName.value = playerName || '';
-      updateStartButtons();
     }
 
     function saveScoreWithName() {
@@ -1700,17 +1742,14 @@
       
       updateHUD();
       startMusic();
-      // Clear username input if any
+      // Clear any game-over username display if present
       const uname = document.getElementById('username-input');
       if (uname) {
         uname.style.display = '';
-        uname.value = playerName || '';
+        uname.value = '';
         const saved = uname.parentNode.querySelector('div');
         if (saved) saved.remove();
       }
-      // Also update start name input
-      const startName = document.getElementById('player-name-input');
-      if (startName) startName.value = playerName || '';
     }
     
     // Simple sound using Web Audio API
@@ -2806,6 +2845,15 @@
       ctx.fillStyle = '#444';
       ctx.font = '10px "Press Start 2P", monospace';
       ctx.fillText('ARROW KEYS / SPACE', WIDTH/2 - 90, HEIGHT - 20);
+
+      // Show player's name on title screen (top right)
+      if (playerName) {
+        ctx.fillStyle = '#0ff';
+        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText('PLAYING AS: ' + playerName.toUpperCase(), WIDTH - 30, 35);
+        ctx.textAlign = 'left';
+      }
     }
 
     function drawPreviewEnemy(ex, ey, type, mood) {
@@ -2858,9 +2906,10 @@
           return;
         }
       }
-      // Fallback: if clicked and has name, start normal game
-      const nameInput = document.getElementById('player-name-input');
-      if (nameInput && nameInput.value.trim().length > 0) {
+      // Fallback: if clicked without name entry, show name screen
+      if (!playerName) {
+        showNameEntry();
+      } else {
         startGame();
       }
     }
@@ -2985,22 +3034,12 @@
       try {
         playerName = localStorage.getItem('playerName') || '';
       } catch(e) {}
-      const nameInput = document.getElementById('player-name-input');
-      if (nameInput) {
-        nameInput.value = playerName;
-        nameInput.addEventListener('input', updatePlayerName);
-      }
-      updateStartButtons();
       
-      // Show warning if no name on first load
-      const nameWarning = document.getElementById('name-warning');
-      if (nameWarning && !playerName) {
-        nameWarning.style.display = 'block';
-      }
-
-      // Make sure name input is visible and focused if needed
-      if (nameInput && !playerName) {
-        // will show warning
+      // Decide initial screen: force name entry if no name saved
+      if (!playerName) {
+        showNameEntry();
+      } else {
+        document.getElementById('start-screen').classList.add('visible');
       }
       
       // Set initial music button state
