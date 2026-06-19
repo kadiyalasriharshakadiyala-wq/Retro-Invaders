@@ -82,19 +82,21 @@
     }
     
     .overlay button {
-      margin-top: 20px;
-      padding: 12px 32px;
+      margin-top: 12px;
+      padding: 12px 28px;
       font-family: "Press Start 2P", system-ui, sans-serif;
-      font-size: 14px;
+      font-size: 13px;
       background: #0ff;
       color: #000;
-      border: none;
+      border: 2px solid #0aa;
       cursor: pointer;
       pointer-events: all;
+      min-width: 180px;
     }
     
     .overlay button:hover {
       background: #0cc;
+      border-color: #0ff;
     }
     
     .title {
@@ -133,7 +135,7 @@
     <canvas id="game" width="800" height="600"></canvas>
     
     <!-- Start Screen -->
-    <div id="start-screen" class="overlay visible" style="pointer-events: all; background: transparent;">
+    <div id="start-screen" class="overlay visible" style="pointer-events: none; background: transparent;">
       <div class="title" id="title-text" style="display:none;">RETRO INVADERS</div>
       <div style="margin: 12px 0; font-size: 14px; color: #0ff; display:none;">The 8-bit classic returns! <span style="font-size:10px; color:#888;">v1.0</span></div>
       <div style="font-size:10px; color:#666; margin-bottom:8px; display:none;">Chain kills for multipliers! Power-ups drop from enemies.</div>
@@ -167,18 +169,38 @@
     
     <!-- Game Over Screen -->
     <div id="game-over-screen" class="overlay">
-      <div style="font-size: 32px; color: #f44; margin-bottom: 10px;">GAME OVER</div>
-      <div class="final-score">SCORE: <span id="final-score">00000</span></div>
-      <div style="margin-bottom: 12px; font-size: 13px; color: #ff0;">HIGH SCORE: <span id="final-high-score">00000</span></div>
+      <div style="font-size: 28px; color: #f44; margin-bottom: 6px; text-shadow: 0 0 8px #f44;">GAME OVER</div>
       
-      <div id="auto-save-message" style="margin: 15px 0; font-size:12px; color:#0f0;">
-        Score automatically saved to leaderboard as <span id="saved-as-name" style="color:#fff;"></span>
+      <!-- Player name -->
+      <div style="font-size: 11px; color: #0ff; margin-bottom: 4px; letter-spacing: 1px;">PLAYING AS <span id="final-player-name" style="color:#fff; font-size:12px;"></span></div>
+      
+      <div class="final-score">SCORE: <span id="final-score">00000</span></div>
+      <div style="margin-bottom: 8px; font-size: 12px; color: #ff0;">HIGH: <span id="final-high-score">00000</span></div>
+      
+      <!-- Injected stats (breakdown, combo, stars, funny line) go here via JS -->
+      
+      <div id="auto-save-message" style="margin: 8px 0; font-size:11px; color:#0a0;">
+        SAVED TO LEADERBOARD
       </div>
       
-      <button onclick="restartGame()" style="margin-top: 8px;">PLAY AGAIN (R)</button>
-      <button onclick="goToHome()" style="margin-top: 8px; background: #555;">HOME</button>
-      <button onclick="showLeaderboard()" style="margin-top: 8px; background: #555;">LEADERBOARD</button>
-      <button onclick="shareScore()" style="margin-top: 8px; background: #555;">SHARE SCORE</button>
+      <!-- Big clear primary actions - retro style, large & clickable -->
+      <button onclick="restartGame()" 
+              style="margin-top: 12px; padding: 14px 48px; font-size: 15px; background:#0ff; color:#000; border: 3px solid #0aa; min-width: 260px;">
+        RESTART (R)
+      </button>
+      
+      <button onclick="goToHome()" 
+              style="margin-top: 14px; padding: 14px 48px; font-size: 15px; background:#222; color:#0ff; border: 3px solid #0ff; min-width: 260px;">
+        RETURN TO MENU
+      </button>
+      
+      <!-- Secondary actions, smaller -->
+      <div style="margin-top: 14px; display: flex; gap: 12px;">
+        <button onclick="showLeaderboard()" 
+                style="padding: 8px 16px; font-size: 11px; background:#333; color:#ccc; border: 2px solid #555;">LEADERBOARD</button>
+        <button onclick="shareScore()" 
+                style="padding: 8px 16px; font-size: 11px; background:#222; color:#888; border: 2px solid #444;">SHARE</button>
+      </div>
     </div>
 
     <!-- Settings Screen -->
@@ -231,7 +253,7 @@
   </div>
   
   <div class="info">
-    <span>ARROW KEYS / A D</span> to move &nbsp;&nbsp; • &nbsp;&nbsp; <span>SPACE</span> to shoot &nbsp;&nbsp; • &nbsp;&nbsp; <span>P</span> pause &nbsp;&nbsp; • &nbsp;&nbsp; <span>F</span> fullscreen &nbsp;&nbsp; • &nbsp;&nbsp; <span>R</span> restart &nbsp;&nbsp; • &nbsp;&nbsp; <span>M</span> music
+    <span>ARROW KEYS / A D</span> to move &nbsp;&nbsp; • &nbsp;&nbsp; <span>SPACE</span> to shoot &nbsp;&nbsp; • &nbsp;&nbsp; <span>P</span> pause &nbsp;&nbsp; • &nbsp;&nbsp; <span>F</span> fullscreen &nbsp;&nbsp; • &nbsp;&nbsp; <span>R</span> restart &nbsp;&nbsp; • &nbsp;&nbsp; <span>H</span> home &nbsp;&nbsp; • &nbsp;&nbsp; <span>M</span> music
   </div>
 
   <script>
@@ -446,6 +468,7 @@
       currentMoveInterval = 340;
       lastEnemyShot = 0;
       lastEnemyMove = 0;
+      lastShotTime = 0;
       
       // Reset emotions
       playerEmotion = 'neutral';
@@ -1337,13 +1360,11 @@
       document.getElementById('final-score').textContent = String(score).padStart(5, '0');
       document.getElementById('final-high-score').textContent = String(highScore).padStart(5, '0');
 
-      // Show auto-save confirmation using the player's name
-      const saveMsg = document.getElementById('auto-save-message');
-      const savedNameSpan = document.getElementById('saved-as-name');
-      if (savedNameSpan) savedNameSpan.textContent = playerName || 'Unknown';
-      if (saveMsg) saveMsg.style.display = playerName ? 'block' : 'none';
+      // Show player name prominently on aftermath
+      const nameSpan = document.getElementById('final-player-name');
+      if (nameSpan) nameSpan.textContent = (playerName || 'SPACE CADET').toUpperCase();
 
-      // Automatically save score to leaderboard with player name (no anonymous)
+      // Auto-save leaderboard entry if named (required)
       if (playerName) {
         const entry = {
           name: playerName,
@@ -1358,23 +1379,26 @@
         leaderboard = leaderboard.slice(0, 10);
         localStorage.setItem('retroInvadersLeaderboard', JSON.stringify(leaderboard));
         
-        // Also keep in recent run history
+        // Recent history
         runHistory.unshift(entry);
         runHistory = runHistory.slice(0, 5);
         localStorage.setItem('retroInvadersHistory', JSON.stringify(runHistory));
       }
 
-      // Aftermath stats screen
-      const statsDiv = document.getElementById('game-over-stats') || document.createElement('div');
-      statsDiv.id = 'game-over-stats';
-      statsDiv.style.marginTop = '15px';
-      statsDiv.style.fontSize = '12px';
+      // Aftermath stats (emotional breakdown etc) - always refresh content
+      let statsDiv = document.getElementById('game-over-stats');
+      if (!statsDiv) {
+        statsDiv = document.createElement('div');
+        statsDiv.id = 'game-over-stats';
+      }
+      statsDiv.style.marginTop = '8px';
+      statsDiv.style.fontSize = '11px';
       statsDiv.style.color = '#ccc';
-      statsDiv.style.lineHeight = '1.4';
+      statsDiv.style.lineHeight = '1.35';
       let grudgeText = '';
       if (grudgeHits >= 3) {
         const types = ['red','orange','cyan','bomber','diver'];
-        grudgeText = `<br>A ${types[grudgeEnemyType] || 'certain'} enemy held a grudge against you.`;
+        grudgeText = `<br><span style="color:#f80">A ${types[grudgeEnemyType] || 'certain'} enemy held a grudge.</span>`;
       }
       
       const funnyLines = [
@@ -1400,35 +1424,24 @@
       const randomLine = funnyLines[Math.floor(Math.random() * funnyLines.length)];
       
       statsDiv.innerHTML = `
-        <div style="margin-top:10px; font-size:13px; color:#eee; line-height:1.5;">
-          You destroyed <span style="color:#ff0">${stats.destroyed}</span> invaders today.<br>
-          Happy: <span style="color:#f44">${stats.happyMade}</span> | Sad: <span style="color:#88f">${stats.sadMade}</span> | Scared: <span style="color:#f8f">${stats.scaredMade}</span><br>
-          Biggest combo: <span style="color:#ff0">${biggestCombo}x</span> — they were terrified.<br>
-          <span style="color:#aaa; font-size:11px;">${randomLine}</span>
+        <div style="margin:6px 0 4px; padding:6px 10px; background:rgba(0,0,0,0.4); border:1px solid #333; font-size:11px; color:#ddd; line-height:1.4;">
+          DESTROYED: <span style="color:#ff0">${stats.destroyed}</span><br>
+          MOODS → <span style="color:#f44">HAPPY ${stats.happyMade}</span> / <span style="color:#88f">SAD ${stats.sadMade}</span> / <span style="color:#f8f">SCARED ${stats.scaredMade}</span><br>
+          MAX COMBO: <span style="color:#ff0">${biggestCombo}x</span><br>
+          <span style="color:#888; font-size:10px;">${randomLine}</span>
           ${grudgeText}
-          <br><span style="color:#ff0">+${Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed} Stars earned! Total: ${earnedStars}</span>
-          ${newAch && newAch.length ? `<br><span style="color:#0f0">Unlocked: ${newAch.join(', ')}</span>` : ''}
+          <br><span style="color:#ff0">+${Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed} STARS</span> (TOTAL ${earnedStars})
+          ${newAch && newAch.length ? `<br><span style="color:#0f0">NEW: ${newAch.join(', ')}</span>` : ''}
         </div>
       `;
       const goScreen = document.getElementById('game-over-screen');
-      if (!document.getElementById('game-over-stats')) {
-        goScreen.insertBefore(statsDiv, goScreen.querySelector('button'));
+      // Insert stats right after high score area, before auto-save msg or buttons
+      const insertBeforeEl = goScreen.querySelector('#auto-save-message') || goScreen.querySelector('button');
+      if (statsDiv.parentNode !== goScreen) {
+        goScreen.insertBefore(statsDiv, insertBeforeEl);
       }
 
-      // Auto focus username input
-      setTimeout(() => {
-        const unameInput = document.getElementById('username-input');
-        if (unameInput) {
-          // blur canvas first
-          if (document.activeElement === canvas) {
-            document.body.focus();
-          }
-          if (playerName) unameInput.value = playerName;
-          unameInput.focus();
-          unameInput.select(); // optional: select all for easy replace
-        }
-      }, 150);
-
+      // Make game over visible + hide title
       document.getElementById('game-over-screen').classList.add('visible');
       document.getElementById('start-screen').classList.remove('visible');
       
@@ -1454,6 +1467,8 @@
       resetGame();
       gameState = 'playing';
       endlessMode = false;
+      dailyMode = false;
+      lastMode = 'normal';
       
       document.getElementById('start-screen').classList.remove('visible');
       document.getElementById('game-over-screen').classList.remove('visible');
@@ -1467,6 +1482,7 @@
 
     let endlessMode = false;
     let dailyMode = false;
+    let lastMode = 'normal'; // 'normal' | 'endless' | 'daily'  -- for correct RESTART from aftermath
 
     function startEndlessMode() {
       if (gameState === 'playing') return;
@@ -1479,6 +1495,8 @@
       resetGame();
       gameState = 'playing';
       endlessMode = true;
+      dailyMode = false;
+      lastMode = 'endless';
       wave = 1;
       
       document.getElementById('start-screen').classList.remove('visible');
@@ -1504,7 +1522,9 @@
       
       resetGame();
       gameState = 'playing';
+      endlessMode = false;
       dailyMode = true;
+      lastMode = 'daily';
       lives = 2; // special daily rule
       activePowerups.rapid = 999; // forced powerup
       document.getElementById('start-screen').classList.remove('visible');
@@ -1537,7 +1557,16 @@
 
     function closeLeaderboard() {
       document.getElementById('leaderboard-screen').classList.remove('visible');
+      // Clean any lingering gameover remnants if user came here from death
+      const oldStats = document.getElementById('game-over-stats');
+      if (oldStats) oldStats.remove();
+      document.getElementById('game-over-screen').classList.remove('visible');
       document.getElementById('start-screen').classList.add('visible');
+      // Ensure we are in title state
+      if (gameState !== 'start') {
+        gameState = 'start';
+        draw();
+      }
     }
 
     function showNameEntry() {
@@ -1598,60 +1627,90 @@
     }
 
     function goToHome() {
-      document.getElementById('game-over-screen').classList.remove('visible');
+      // 1. Hide/remove all gameplay overlays immediately
+      const goScreen = document.getElementById('game-over-screen');
+      if (goScreen) goScreen.classList.remove('visible');
       document.getElementById('leaderboard-screen').classList.remove('visible');
-      document.getElementById('start-screen').classList.add('visible');
-      // Clear any game-over username display
-      const input = document.getElementById('username-input');
-      if (input) input.value = '';
-    }
+      document.getElementById('settings-screen').classList.remove('visible');
+      document.getElementById('howto-screen').classList.remove('visible');
+      document.getElementById('name-entry-screen').classList.remove('visible');
 
-    function saveScoreWithName() {
-      const input = document.getElementById('username-input');
-      let name = input ? input.value.trim() : '';
-      if (!name) name = playerName || 'Anonymous';
-      if (name.length > 15) name = name.substring(0, 15);
+      // 2. Remove any injected aftermath stats DOM node so it doesn't leak
+      const oldStats = document.getElementById('game-over-stats');
+      if (oldStats) oldStats.remove();
 
-      const entry = {
-        name: name,
-        score: score,
-        wave: wave,
-        biggestCombo: biggestCombo,
-        stars: Math.floor(score / 100) + Math.floor(biggestCombo * 5) + stats.destroyed,
-        date: new Date().toLocaleDateString()
-      };
+      // 3. FULL RESET of ALL gameplay state (prevents stuck / ghost loops)
+      score = 0;
+      lives = 3;
+      wave = 1;
+      bullets = [];
+      enemies = [];
+      particles = [];
+      enemyBullets = [];
+      powerups = [];
+      scorePops = [];
+      boss = null;
+      barriers = [];
+      combo = 0;
+      multiplier = 1;
+      comboTimer = 0;
+      biggestCombo = 1;
+      stats = { destroyed: 0, happyMade: 0, sadMade: 0, scaredMade: 0 };
+      grudgeEnemyType = -1;
+      grudgeHits = 0;
+      activePowerups = {};
+      playerEmotion = 'neutral';
+      playerEmotionTime = 0;
+      screenShake = 0;
+      powerupFlash = 0;
+      comboFlash = 0;
+      bgIntensity = 1;
+      firstPowerupHint = true;
+      firstComboHint = true;
+      player.vx = 0;
+      player.x = WIDTH / 2;
+      player.y = HEIGHT - 60;
+      enemyDirection = 1;
+      enemySpeed = 1.9;
+      enemyDropAmount = 20;
+      currentMoveInterval = 340;
+      lastEnemyShot = 0;
+      lastEnemyMove = 0;
+      lastShotTime = 0;
+      paused = false;
+      endlessMode = false;
+      dailyMode = false;
 
-      // Add to run history (recent)
-      runHistory.unshift(entry);
-      runHistory = runHistory.slice(0, 5);
-      localStorage.setItem('retroInvadersHistory', JSON.stringify(runHistory));
-
-      // Add to leaderboard and keep top 10
-      leaderboard.push(entry);
-      leaderboard.sort((a, b) => b.score - a.score);
-      leaderboard = leaderboard.slice(0, 10);
-      localStorage.setItem('retroInvadersLeaderboard', JSON.stringify(leaderboard));
-
-      // Update high score if needed
-      if (score > highScore) {
-        highScore = score;
-        localStorage.setItem('shooterHighScore', highScore);
-        document.getElementById('final-high-score').textContent = String(highScore).padStart(5, '0');
+      // Rebuild clean barriers (menu never shows them but keeps vars consistent)
+      for (let i = 0; i < 4; i++) {
+        barriers.push({
+          x: 120 + i * 160,
+          y: HEIGHT - 70,
+          width: 50,
+          height: 20,
+          health: 4
+        });
       }
 
-      alert(`Score saved for ${name}!`);
-      
-      // Optionally hide input after save
-      if (input) {
-        input.style.display = 'none';
-        // Show saved name
-        const saved = document.createElement('div');
-        saved.style.color = '#0f0';
-        saved.style.marginTop = '5px';
-        saved.textContent = `Saved as: ${name}`;
-        input.parentNode.appendChild(saved);
-      }
+      // 4. Change state BEFORE drawing title
+      gameState = 'start';
+
+      // 5. Stop any music / timers that were gameplay-only
+      stopMusic();
+
+      // 6. Refresh UI and show beautiful title screen
+      updateHUD();
+      const menuHigh = document.getElementById('menu-high-score');
+      if (menuHigh) menuHigh.textContent = String(highScore).padStart(5, '0');
+
+      const startScr = document.getElementById('start-screen');
+      if (startScr) startScr.classList.add('visible');
+
+      // Force a clean title draw (parallax, glowing buttons, name, previews)
+      draw();
     }
+
+
 
     function shareScore() {
       const funnyLines = [
@@ -1697,7 +1756,10 @@
     function closeSettings() {
       playUISound();
       document.getElementById('settings-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
+      const oldS = document.getElementById('game-over-stats'); if (oldS) oldS.remove();
       document.getElementById('start-screen').classList.add('visible');
+      if (gameState !== 'start' && gameState !== 'playing') { gameState = 'start'; draw(); }
     }
 
     function setVolume(val) {
@@ -1721,7 +1783,10 @@
     function closeHowTo() {
       playUISound();
       document.getElementById('howto-screen').classList.remove('visible');
+      document.getElementById('game-over-screen').classList.remove('visible');
+      const oldS = document.getElementById('game-over-stats'); if (oldS) oldS.remove();
       document.getElementById('start-screen').classList.add('visible');
+      if (gameState !== 'start' && gameState !== 'playing') { gameState = 'start'; draw(); }
     }
 
     // Override playSound volume with master
@@ -1735,6 +1800,19 @@
       resetGame();
       gameState = 'playing';
       
+      // Restore the mode we were in when we died (so RESTART feels consistent)
+      endlessMode = (lastMode === 'endless');
+      dailyMode = (lastMode === 'daily');
+      
+      // If endless, give a small starting boost like initial startEndless did
+      if (endlessMode) {
+        activePowerups.rapid = 160;
+      }
+      if (dailyMode) {
+        lives = Math.min(lives, 2);
+        activePowerups.rapid = 600;
+      }
+      
       document.getElementById('start-screen').classList.remove('visible');
       document.getElementById('game-over-screen').classList.remove('visible');
       const oldStats = document.getElementById('game-over-stats');
@@ -1742,14 +1820,6 @@
       
       updateHUD();
       startMusic();
-      // Clear any game-over username display if present
-      const uname = document.getElementById('username-input');
-      if (uname) {
-        uname.style.display = '';
-        uname.value = '';
-        const saved = uname.parentNode.querySelector('div');
-        if (saved) saved.remove();
-      }
     }
     
     // Simple sound using Web Audio API

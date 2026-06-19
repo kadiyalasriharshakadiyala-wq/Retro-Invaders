@@ -11,6 +11,7 @@
 - Technical: PWA manifest, object pooling notes/cap for particles, performance considerations, full state reset on restart, error handling for audio/storage
 - Balance: Tuned early waves for normal, slower endless ramp, 16% power-up drops, power-up stacking
 - Polish: Score pops, bullet trails, combo flash/border, power-up flash, more enemy variety visuals/behaviors, boss shape improvement, aftermath enhancement
+- Game Over / Aftermath Flow Fix: Two big prominent buttons (RESTART + RETURN TO MENU), full player stats + name + emotional breakdown visible, exhaustive reset in goToHome (all arrays/vars/modes/timers/shake cleared + state='start' + stopMusic + draw title), lastMode tracking so RESTART resumes correct (Normal/Endless/Daily), R still restarts, H goes home from anywhere, no more stuck states or hidden menu options. Clean navigation: death → stats → menu or immediate restart.
 
 All items from the full improvement & launch checklist addressed in order of priority where code-applicable. Game is launch-ready with strong emotional hook + addictive modern loops in retro package.
 
